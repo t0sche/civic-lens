@@ -1,0 +1,50 @@
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "CivicLens — Bel Air, MD",
+  description:
+    "Plain-language access to the laws that affect you. Track legislation and ask questions about local, county, and state law in Bel Air, Maryland.",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+        <header className="border-b border-gray-200 bg-white">
+          <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+            <a href="/" className="text-xl font-semibold tracking-tight">
+              CivicLens
+            </a>
+            <div className="flex gap-6 text-sm">
+              <a href="/" className="hover:text-blue-600">
+                Dashboard
+              </a>
+              <a href="/chat" className="hover:text-blue-600">
+                Ask a Question
+              </a>
+              <a href="/about" className="hover:text-blue-600">
+                About
+              </a>
+            </div>
+          </nav>
+        </header>
+        <main>{children}</main>
+        <footer className="border-t border-gray-200 bg-white py-6 text-center text-xs text-gray-500">
+          <p>
+            CivicLens is not a law firm and does not provide legal advice.
+            Information is provided for educational purposes only.
+          </p>
+          <p className="mt-1">
+            Data sourced from Maryland General Assembly, Harford County, and
+            Town of Bel Air public records.
+          </p>
+        </footer>
+      </body>
+    </html>
+  );
+}
