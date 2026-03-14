@@ -1,0 +1,96 @@
+schema_version: 1
+last_updated: 2026-03-14
+# LLDs and EARS specs complete for all arrows as of 2026-03-14. Next: Implementation.
+
+# Arrow of Intent Index — CivicLens
+#
+# Chain: HLD → LLDs → EARS → Tests → Code
+# Read this file first to understand project status and navigate.
+
+arrows:
+  infrastructure:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: [ingestion-apis, ingestion-scraping]
+    blockedBy: []
+    detail: infrastructure.md
+    next: "Create Supabase project, define Bronze/Silver/Gold schemas, configure Vercel + GitHub Actions"
+    drift: null
+
+  ingestion-apis:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: [data-pipeline]
+    blockedBy: [infrastructure]
+    detail: ingestion-apis.md
+    next: "Implement Open States and LegiScan API clients; populate Bronze layer with MD state bills"
+    drift: null
+
+  ingestion-scraping:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: [ingestion-pdf]
+    blockedBy: [infrastructure]
+    detail: ingestion-scraping.md
+    next: "Build eCode360 HTML scraper for Bel Air town code; CivicPlus AgendaCenter scrapers"
+    drift: null
+
+  ingestion-pdf:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: []
+    blockedBy: [ingestion-scraping]
+    detail: ingestion-pdf.md
+    next: "Build PDF text extraction pipeline for meeting minutes and agendas"
+    drift: null
+
+  data-pipeline:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: [embeddings, dashboard]
+    blockedBy: [ingestion-apis]
+    detail: data-pipeline.md
+    next: "Build Bronze→Silver normalization; legislative_item and code_section schemas"
+    drift: null
+
+  embeddings:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: [chat]
+    blockedBy: [data-pipeline]
+    detail: embeddings.md
+    next: "Implement section-aware chunking, embedding generation, pgvector storage"
+    drift: null
+
+  chat:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: []
+    blockedBy: [embeddings]
+    detail: chat.md
+    next: "Build RAG retrieval pipeline, model routing heuristic, citation generation"
+    drift: null
+
+  dashboard:
+    status: MAPPED
+    sampled: 2026-03-14
+    audited: null
+    blocks: []
+    blockedBy: [data-pipeline]
+    detail: dashboard.md
+    next: "Build legislative tracker UI with jurisdiction/status/type filters"
+    drift: null
+
+unmapped:
+  # Nothing unmapped — all domains identified in HLD are tracked above.
+  # Future candidates:
+  #   - meeting-transcription (YouTube auto-captions → searchable text)
+  #   - notifications (email/RSS for tracked legislation changes)
+  #   - multi-jurisdiction (abstraction layer for forkability)

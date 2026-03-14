@@ -1,0 +1,32 @@
+# CivicLens — Python dependencies for ingestion and pipeline
+# Install: pip install -r requirements.txt
+
+# ─── HTTP / Scraping ────────────────────────────────────────────────
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0               # Fast HTML/XML parser for BS4
+feedparser>=6.0.0          # RSS feed parsing
+
+# ─── PDF Extraction ─────────────────────────────────────────────────
+pdfplumber>=0.11.0         # PDF text/table extraction
+# pytesseract>=0.3.10     # OCR — uncomment when Tier 3 PDF work begins
+
+# ─── Database ────────────────────────────────────────────────────────
+supabase>=2.5.0            # Supabase Python client
+psycopg2-binary>=2.9.9    # Postgres driver (for direct pgvector queries if needed)
+
+# ─── Embeddings ──────────────────────────────────────────────────────
+# sentence-transformers>=3.0.0  # For local MiniLM — uncomment if not using Gemini
+google-generativeai>=0.7.0     # Gemini embedding API
+
+# ─── Data Processing ────────────────────────────────────────────────
+pydantic>=2.7.0            # Data validation and schema enforcement
+python-dotenv>=1.0.0       # .env file loading
+
+# ─── Testing ─────────────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+responses>=0.25.0          # Mock HTTP requests in tests
+
+# ─── Dev / Linting ──────────────────────────────────────────────────
+ruff>=0.5.0                # Linting + formatting

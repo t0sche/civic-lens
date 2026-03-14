@@ -1,0 +1,132 @@
+# CivicLens Data Ingestion Pipeline
+# Runs on a schedule to keep legislative data fresh.
+#
+# Schedule rationale (HLD D5):
+# - State bills: every 6 hours (Open States updates multiple times/day)
+# - Local scraping: daily at 6 AM ET (government sites update during business hours)
+# - Embeddings: after each ingestion run
+
+name: Data Ingestion Pipeline
+
+on:
+  schedule:
+    # State legislative data: every 6 hours
+    - cron: '0 */6 * * *'
+    # Local data scraping: daily at 11:00 UTC (6:00 AM ET)
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Source to ingest (openstates, legiscan, ecode360, belair, all)'
+        required: false
+        default: 'all'
+      skip_embeddings:
+        description: 'Skip embedding generation'
+        required: false
+        default: 'false'
+
+jobs:
+  ingest-state-bills:
+    name: Ingest State Bills (Open States)
+    runs-on: ubuntu-latest
+    # Run on 6-hour schedule and manual dispatch
+    if: github.event_name == 'schedule' || github.event.inputs.source == 'openstates' || github.event.inputs.source == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Open States ingestion
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENSTATES_API_KEY: ${{ secrets.OPENSTATES_API_KEY }}
+        run: python -m src.ingestion.clients.openstates
+
+  ingest-local-data:
+    name: Ingest Local Data (Scraping)
+    runs-on: ubuntu-latest
+    # Run on daily schedule and manual dispatch
+    if: |
+      (github.event.schedule == '0 11 * * *') ||
+      github.event.inputs.source == 'ecode360' ||
+      github.event.inputs.source == 'belair' ||
+      github.event.inputs.source == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scrape Bel Air town code (eCode360)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m src.ingestion.scrapers.ecode360
+
+      - name: Scrape Bel Air legislation page
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m src.ingestion.scrapers.belair_legislation
+
+  normalize-and-embed:
+    name: Normalize + Embed
+    runs-on: ubuntu-latest
+    needs: [ingest-state-bills, ingest-local-data]
+    # Always run after ingestion, even if one source failed
+    if: |
+      always() &&
+      (needs.ingest-state-bills.result == 'success' || needs.ingest-local-data.result == 'success') &&
+      github.event.inputs.skip_embeddings != 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Bronze → Silver normalization
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m src.pipeline.normalize
+
+      - name: Run embedding generation
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+        run: python -m src.pipeline.embedder
+
+  notify-on-failure:
+    name: Alert on Failure
+    runs-on: ubuntu-latest
+    needs: [ingest-state-bills, ingest-local-data, normalize-and-embed]
+    if: failure()
+    steps:
+      - name: Log failure
+        run: |
+          echo "::error::CivicLens ingestion pipeline failed. Check job logs."
+          echo "State bills: ${{ needs.ingest-state-bills.result }}"
+          echo "Local data: ${{ needs.ingest-local-data.result }}"
+          echo "Normalize/embed: ${{ needs.normalize-and-embed.result }}"
+        # TODO: Add email/Slack notification here
