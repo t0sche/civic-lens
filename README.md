@@ -84,6 +84,10 @@ npm run dev
 python -m src.ingestion.clients.openstates
 ```
 
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for step-by-step instructions to host the app publicly on Vercel + Supabase + GitHub Actions (all free-tier eligible).
+
 ## Design Documents
 
 This project follows a [design-driven development](docs/high-level-design.md) workflow with full traceability from requirements to code.
