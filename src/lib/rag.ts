@@ -103,7 +103,7 @@ export async function retrieveContext(
 
   // Compute context metadata for model routing
   const uniqueDocIds = new Set(chunks.map((c) => c.source_id));
-  const jurisdictions = [...new Set(chunks.map((c) => c.jurisdiction))];
+  const jurisdictions = Array.from(new Set(chunks.map((c) => c.jurisdiction)));
 
   return {
     chunks,
