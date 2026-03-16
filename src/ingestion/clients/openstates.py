@@ -9,6 +9,8 @@ API docs: https://docs.openstates.org/api-v3/
 @spec INGEST-API-001, INGEST-API-002
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Generator
 
@@ -74,7 +76,7 @@ class OpenStatesClient:
             "jurisdiction": MARYLAND_JURISDICTION,
             "page": page,
             "per_page": min(per_page, 50),
-            "include": "abstracts,actions,sponsorships,sources",
+            "include": ["abstracts", "actions", "sponsorships", "sources"],
         }
         if session:
             params["session"] = session

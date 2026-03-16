@@ -10,6 +10,8 @@ fields to the unified data model.
 @spec DATA-PIPE-001, DATA-PIPE-002
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import date

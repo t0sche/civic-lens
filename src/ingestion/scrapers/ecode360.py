@@ -11,6 +11,8 @@ and generates section_path breadcrumbs for RAG retrieval context.
 @spec INGEST-SCRAPE-001, INGEST-SCRAPE-002
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from dataclasses import dataclass

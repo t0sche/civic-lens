@@ -12,6 +12,8 @@ bounded by section numbers.
 @spec DATA-EMBED-001, DATA-EMBED-002, DATA-EMBED-003
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from typing import Any

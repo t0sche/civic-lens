@@ -11,6 +11,8 @@ links to PDF documents in the CivicPlus DocumentCenter.
 @spec INGEST-SCRAPE-003
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import time

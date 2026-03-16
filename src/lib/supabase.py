@@ -4,6 +4,8 @@ Supabase client for Python ingestion and pipeline scripts.
 Provides typed helpers for Bronze/Silver/Gold layer operations.
 """
 
+from __future__ import annotations
+
 import hashlib
 from datetime import datetime, timezone
 from typing import Any
