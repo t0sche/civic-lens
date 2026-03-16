@@ -12,6 +12,7 @@ API docs: https://docs.openstates.org/api-v3/
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Generator
 
 import requests
@@ -47,13 +48,23 @@ class OpenStatesClient:
         })
 
     def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict:
-        """Make an authenticated GET request with error handling."""
+        """Make an authenticated GET request with rate-limit retry."""
         url = f"{BASE_URL}{endpoint}"
-        response = self.session.get(url, params=params or {})
-        if not response.ok:
-            logger.error(
-                "API error %s %s: %s", response.status_code, response.url, response.text
-            )
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            response = self.session.get(url, params=params or {})
+            if response.status_code == 429:
+                wait = 7 * (attempt + 1)
+                logger.warning("Rate limited (429). Waiting %ds before retry %d/%d", wait, attempt + 1, max_retries)
+                time.sleep(wait)
+                continue
+            if not response.ok:
+                logger.error(
+                    "API error %s %s: %s", response.status_code, response.url, response.text
+                )
+            response.raise_for_status()
+            return response.json()
+        # Final attempt after all retries exhausted
         response.raise_for_status()
         return response.json()
 
@@ -117,6 +128,8 @@ class OpenStatesClient:
             if page >= pagination.get("max_page", 1):
                 break
             page += 1
+            # Stay under 10 req/min rate limit
+            time.sleep(7)
 
     def fetch_bill_detail(self, bill_id: str) -> dict:
         """Fetch full detail for a single bill by Open States ID."""
