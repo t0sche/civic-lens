@@ -156,13 +156,13 @@ def ingest_state_bills(
         new = 0
         updated = 0
 
+        import json
+
         for bill in client.fetch_all_bills(session=session, updated_since=updated_since):
             fetched += 1
             bill_id = bill.get("id", "")
             identifier = bill.get("identifier", "unknown")
 
-            # Serialize the full bill JSON as raw content
-            import json
             raw_content = json.dumps(bill, default=str)
 
             result = upsert_bronze_document(
@@ -179,8 +179,15 @@ def ingest_state_bills(
                 url=bill.get("openstates_url"),
             )
 
-            # TODO: Track new vs. updated based on content_hash comparison
-            logger.info(f"Ingested bill {identifier} ({bill_id})")
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+                logger.info(f"New bill {identifier} ({bill_id})")
+            elif status == "updated":
+                updated += 1
+                logger.info(f"Updated bill {identifier} ({bill_id})")
+            else:
+                logger.debug(f"Skipped unchanged bill {identifier} ({bill_id})")
 
         complete_ingestion_run(
             db, run_id,
