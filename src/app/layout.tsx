@@ -43,6 +43,27 @@ export default function RootLayout({
             Data sourced from Maryland General Assembly, Harford County, and
             Town of Bel Air public records.
           </p>
+          <p className="mt-1">
+            Legislative data provided by{" "}
+            <a
+              href="https://legiscan.com"
+              className="underline hover:text-gray-700"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              LegiScan
+            </a>
+            {" "}and licensed under{" "}
+            <a
+              href="https://creativecommons.org/licenses/by/4.0/"
+              className="underline hover:text-gray-700"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Creative Commons Attribution 4.0
+            </a>
+            .
+          </p>
         </footer>
       </body>
     </html>

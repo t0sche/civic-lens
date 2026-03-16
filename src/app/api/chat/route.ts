@@ -23,6 +23,7 @@ interface Source {
   jurisdiction: string;
   source_type: string;
   similarity: number;
+  data_source?: string;
 }
 
 interface ChatResponse {
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
       jurisdiction: chunk.jurisdiction,
       source_type: chunk.source_type,
       similarity: Math.round(chunk.similarity * 100) / 100,
+      data_source: (chunk.metadata?.source as string) || undefined,
     }));
 
     const response: ChatResponse = {
