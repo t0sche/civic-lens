@@ -22,6 +22,7 @@ interface Source {
   jurisdiction: string;
   source_type: string;
   similarity: number;
+  data_source?: string;
 }
 
 const EXAMPLE_QUESTIONS = [
@@ -153,6 +154,11 @@ export default function ChatPage() {
                         <span className="text-gray-300">
                           ({src.jurisdiction})
                         </span>
+                        {src.data_source === "legiscan" && (
+                          <span className="ml-1 text-gray-300">
+                            — via LegiScan (CC BY 4.0)
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
