@@ -152,19 +152,17 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
 
 def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
     """Generate embeddings using Google's Gemini embedding API."""
-    import google.generativeai as genai
+    from google import genai
 
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-    # Gemini embedding model
     embeddings = []
     for text in texts:
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text,
-            task_type="retrieval_document",
+        result = client.models.embed_content(
+            model="text-embedding-004",
+            contents=text,
         )
-        embeddings.append(result["embedding"])
+        embeddings.append(result.embeddings[0].values)
 
     return embeddings
 
