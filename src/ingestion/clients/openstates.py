@@ -76,7 +76,7 @@ class OpenStatesClient:
             "jurisdiction": MARYLAND_JURISDICTION,
             "page": page,
             "per_page": min(per_page, 50),
-            "include": ["abstracts", "actions", "sponsorships", "sources"],
+            "include": "abstracts,actions,sponsorships,sources",
         }
         if session:
             params["session"] = session
