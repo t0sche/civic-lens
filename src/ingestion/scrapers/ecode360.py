@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from typing import Generator
 
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 
 from src.lib.config import get_config
@@ -65,10 +65,7 @@ class ECode360Scraper:
     def __init__(self, municipality_code: str):
         self.municipality_code = municipality_code
         self.base_url = f"{ECODE360_BASE}/{municipality_code}"
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "CivicLens/0.1 (civic transparency project; contact: github.com/YOUR_USERNAME/civiclens)"
-        })
+        self.session = cloudscraper.create_scraper()
 
     def fetch_table_of_contents(self) -> list[CodeEntry]:
         """
