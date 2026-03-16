@@ -18,6 +18,8 @@ Compliance with LegiScan API terms:
 @spec INGEST-API-003, INGEST-API-004
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os

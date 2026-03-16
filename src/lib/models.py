@@ -8,6 +8,7 @@ to the Silver layer.
 
 from datetime import date, datetime
 from enum import Enum
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -69,20 +70,20 @@ class LegislativeItem(BaseModel):
     """
 
     id: UUID = Field(default_factory=uuid4)
-    bronze_id: str | None = None
+    bronze_id: Optional[str] = None
     source_id: str
     jurisdiction: JurisdictionLevel
     body: str  # e.g., "Maryland General Assembly", "Harford County Council"
     item_type: LegislativeType
     title: str
-    summary: str | None = None
+    summary: Optional[str] = None
     status: LegislativeStatus = LegislativeStatus.UNKNOWN
-    introduced_date: date | None = None
-    last_action_date: date | None = None
-    last_action: str | None = None
-    sponsors: list[str] = Field(default_factory=list)
-    source_url: str | None = None
-    tags: list[str] = Field(default_factory=list)
+    introduced_date: Optional[date] = None
+    last_action_date: Optional[date] = None
+    last_action: Optional[str] = None
+    sponsors: List[str] = Field(default_factory=list)
+    source_url: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
 
 
 class CodeSection(BaseModel):
@@ -96,18 +97,18 @@ class CodeSection(BaseModel):
     """
 
     id: UUID = Field(default_factory=uuid4)
-    bronze_id: str | None = None
+    bronze_id: Optional[str] = None
     jurisdiction: JurisdictionLevel
     code_source: str  # "Harford County Code" or "Town of Bel Air Code"
     chapter: str
     section: str
     title: str
     content: str
-    parent_section_id: UUID | None = None
-    section_path: str | None = None  # "Town Code > Ch. 165 > §165-23"
-    source_url: str | None = None
-    effective_date: date | None = None
-    last_amended: date | None = None
+    parent_section_id: Optional[UUID] = None
+    section_path: Optional[str] = None  # "Town Code > Ch. 165 > §165-23"
+    source_url: Optional[str] = None
+    effective_date: Optional[date] = None
+    last_amended: Optional[date] = None
 
 
 class MeetingRecord(BaseModel):
@@ -118,15 +119,15 @@ class MeetingRecord(BaseModel):
     """
 
     id: UUID = Field(default_factory=uuid4)
-    bronze_id: str | None = None
+    bronze_id: Optional[str] = None
     jurisdiction: JurisdictionLevel
     body: str  # "Board of Town Commissioners", "Planning Commission", etc.
     meeting_date: date
     record_type: str  # "agenda" or "minutes"
-    title: str | None = None
-    content: str | None = None  # Extracted text (may be null pre-PDF extraction)
-    pdf_url: str | None = None
-    source_url: str | None = None
+    title: Optional[str] = None
+    content: Optional[str] = None  # Extracted text (may be null pre-PDF extraction)
+    pdf_url: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 # ─── Gold Layer Models ──────────────────────────────────────────────────
@@ -148,6 +149,6 @@ class DocumentChunk(BaseModel):
     jurisdiction: JurisdictionLevel
     chunk_text: str
     chunk_index: int = 0
-    section_path: str | None = None
-    embedding: list[float] | None = None  # Set during embedding generation
-    metadata: dict = Field(default_factory=dict)
+    section_path: Optional[str] = None
+    embedding: Optional[List[float]] = None  # Set during embedding generation
+    metadata: Dict = Field(default_factory=dict)
