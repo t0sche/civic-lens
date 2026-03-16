@@ -135,11 +135,13 @@ def ingest_belair_legislation() -> None:
     try:
         entries = scrape_legislation_page()
         fetched = 0
+        new = 0
+        updated = 0
 
         for entry in entries:
             raw_content = json.dumps(asdict(entry), default=str)
 
-            upsert_bronze_document(
+            result = upsert_bronze_document(
                 db,
                 source="belair_legislation",
                 source_id=entry.number,
@@ -153,9 +155,22 @@ def ingest_belair_legislation() -> None:
                 url=entry.pdf_url or LEGISLATION_URL,
             )
             fetched += 1
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+            elif status == "updated":
+                updated += 1
 
-        complete_ingestion_run(db, run_id, records_fetched=fetched)
-        logger.info(f"Bel Air legislation ingestion complete: {fetched} entries")
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=fetched,
+            records_new=new,
+            records_updated=updated,
+        )
+        logger.info(
+            f"Bel Air legislation ingestion complete: {fetched} fetched, "
+            f"{new} new, {updated} updated"
+        )
 
     except Exception as e:
         logger.error(f"Bel Air legislation ingestion failed: {e}")
