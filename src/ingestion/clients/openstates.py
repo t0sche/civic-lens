@@ -50,6 +50,10 @@ class OpenStatesClient:
         """Make an authenticated GET request with error handling."""
         url = f"{BASE_URL}{endpoint}"
         response = self.session.get(url, params=params or {})
+        if not response.ok:
+            logger.error(
+                "API error %s %s: %s", response.status_code, response.url, response.text
+            )
         response.raise_for_status()
         return response.json()
 
@@ -76,7 +80,7 @@ class OpenStatesClient:
             "jurisdiction": MARYLAND_JURISDICTION,
             "page": page,
             "per_page": min(per_page, 50),
-            "include": "abstracts,actions,sponsorships,sources",
+            "include": ["abstracts", "actions", "sponsorships", "sources"],
         }
         if session:
             params["session"] = session
