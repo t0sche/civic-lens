@@ -71,7 +71,7 @@ class OpenStatesClient:
             session: Legislative session (e.g., "2025"). Defaults to current.
             updated_since: ISO date string — only return bills updated after this date.
             page: Page number for pagination.
-            per_page: Results per page (max 50).
+            per_page: Results per page (max 20).
 
         Returns:
             API response with 'results' list and 'pagination' metadata.
@@ -79,7 +79,7 @@ class OpenStatesClient:
         params: dict[str, Any] = {
             "jurisdiction": MARYLAND_JURISDICTION,
             "page": page,
-            "per_page": min(per_page, 50),
+            "per_page": min(per_page, 20),
             "include": ["abstracts", "actions", "sponsorships", "sources"],
         }
         if session:
@@ -105,7 +105,7 @@ class OpenStatesClient:
                 session=session,
                 updated_since=updated_since,
                 page=page,
-                per_page=50,
+                per_page=20,
             )
             results = response.get("results", [])
             if not results:
