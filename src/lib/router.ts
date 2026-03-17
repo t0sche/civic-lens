@@ -61,7 +61,7 @@ export function routeQuery(
   if (context.uniqueDocCount >= docThreshold) {
     return {
       tier: "frontier",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       reason: `Retrieved chunks span ${context.uniqueDocCount} distinct documents (threshold: ${docThreshold})`,
     };
   }
@@ -70,7 +70,7 @@ export function routeQuery(
   if (context.jurisdictions.length > 1) {
     return {
       tier: "frontier",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       reason: `Query involves ${context.jurisdictions.length} jurisdictions: ${context.jurisdictions.join(", ")}`,
     };
   }
@@ -80,7 +80,7 @@ export function routeQuery(
     if (pattern.test(query)) {
       return {
         tier: "frontier",
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         reason: `Query matches complexity pattern: ${pattern.source.slice(0, 40)}...`,
       };
     }

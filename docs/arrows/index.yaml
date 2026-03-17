@@ -1,6 +1,6 @@
 schema_version: 1
-last_updated: 2026-03-14
-# LLDs and EARS specs complete for all arrows as of 2026-03-14. Next: Implementation.
+last_updated: 2026-03-17
+# Phases 1-7 implemented and deployed as of 2026-03-17. Phase 8 starting.
 
 # Arrow of Intent Index — CivicLens
 #
@@ -9,83 +9,83 @@ last_updated: 2026-03-14
 
 arrows:
   infrastructure:
-    status: MAPPED
+    status: IMPLEMENTED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: [ingestion-apis, ingestion-scraping]
     blockedBy: []
     detail: infrastructure.md
-    next: "Create Supabase project, define Bronze/Silver/Gold schemas, configure Vercel + GitHub Actions"
+    next: "Phase 9 hardening: freshness indicators, cost monitoring"
     drift: null
 
   ingestion-apis:
-    status: MAPPED
+    status: IMPLEMENTED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
-    next: "Implement Open States and LegiScan API clients; populate Bronze layer with MD state bills"
+    next: "Phase 9: LegiScan integration as supplementary source"
     drift: null
 
   ingestion-scraping:
-    status: MAPPED
+    status: IN_PROGRESS
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
-    next: "Build eCode360 HTML scraper for Bel Air town code; CivicPlus AgendaCenter scrapers"
-    drift: null
+    next: "Phase 8: Implement harford_bills.py (ASP.NET scraper); run ecode360 with HA0904"
+    drift: "harford_bills.py is a stub; civicplus_agenda.py is deferred"
 
   ingestion-pdf:
-    status: MAPPED
+    status: DEFERRED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: []
     blockedBy: [ingestion-scraping]
     detail: ingestion-pdf.md
-    next: "Build PDF text extraction pipeline for meeting minutes and agendas"
+    next: "Phase 9+: PDF extraction for meeting minutes once AgendaCenter scraping is in place"
     drift: null
 
   data-pipeline:
-    status: MAPPED
+    status: IN_PROGRESS
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: [embeddings, dashboard]
     blockedBy: [ingestion-apis]
     detail: data-pipeline.md
-    next: "Build Bronze→Silver normalization; legislative_item and code_section schemas"
-    drift: null
+    next: "Phase 8: Add normalize_harford_bills; LegiScan dedup (Phase 9)"
+    drift: "harford_bills normalizer not yet added to NORMALIZERS registry"
 
   embeddings:
-    status: MAPPED
+    status: IMPLEMENTED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: [chat]
     blockedBy: [data-pipeline]
     detail: embeddings.md
-    next: "Implement section-aware chunking, embedding generation, pgvector storage"
+    next: "Phase 9: Retrieval quality evaluation (20-question test set, recall@8)"
     drift: null
 
   chat:
-    status: MAPPED
+    status: IMPLEMENTED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
-    next: "Build RAG retrieval pipeline, model routing heuristic, citation generation"
+    next: "Phase 9: Cost monitoring; streaming for Vercel timeout mitigation"
     drift: null
 
   dashboard:
-    status: MAPPED
+    status: IMPLEMENTED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: []
     blockedBy: [data-pipeline]
     detail: dashboard.md
-    next: "Build legislative tracker UI with jurisdiction/status/type filters"
+    next: "Phase 9: Freshness indicators per source"
     drift: null
 
 unmapped:
