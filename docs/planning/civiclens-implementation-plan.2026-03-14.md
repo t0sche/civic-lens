@@ -2,7 +2,7 @@
 
 **Created**: 2026-03-14
 **Owner**: Stephen Shaffer
-**Status**: Planning
+**Status**: Phase 8 In Progress (Phases 1–7 complete, deployed 2026-03-17)
 **Design Doc**: `/docs/high-level-design.md`, `/docs/llds/*.md`
 **EARS Specs**: `/docs/specs/*.md`
 
@@ -69,14 +69,14 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] Supabase project created with pgvector enabled
-- [ ] Both migrations applied successfully
-- [ ] RLS policies configured and tested (anon read, service_role write)
-- [ ] All API keys procured and stored in `.env.local` and Vercel
-- [ ] Python config module loads all environment variables
-- [ ] Next.js app deployed to Vercel with working navigation, footer, disclaimers
-- [ ] Python Supabase client can connect and query from local machine
-- [ ] TypeScript server client can query from Vercel API route
+- [x] Supabase project created with pgvector enabled
+- [x] Both migrations applied successfully
+- [x] RLS policies configured and tested (anon read, service_role write)
+- [x] All API keys procured and stored in `.env.local` and Vercel
+- [x] Python config module loads all environment variables
+- [x] Next.js app deployed to Vercel with working navigation, footer, disclaimers
+- [x] Python Supabase client can connect and query from local machine
+- [x] TypeScript server client can query from Vercel API route
 
 ---
 
@@ -118,13 +118,13 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] `python -m src.ingestion.clients.openstates` fetches MD bills and writes to Bronze
-- [ ] `python -m src.pipeline.normalize` normalizes Bronze → Silver with correct field mapping
-- [ ] `pytest tests/ingestion/test_openstates.py` — 6/6 passing
-- [ ] `pytest tests/pipeline/test_normalization.py::TestNormalizeOpenStatesBill` — 7/7 passing
-- [ ] Supabase dashboard shows legislative_items with STATUS, jurisdiction, sponsors populated
-- [ ] Running the full pipeline twice produces no duplicates (idempotent)
-- [ ] ingestion_runs table tracks successful run with record counts
+- [x] `python -m src.ingestion.clients.openstates` fetches MD bills and writes to Bronze
+- [x] `python -m src.pipeline.normalize` normalizes Bronze → Silver with correct field mapping
+- [x] `pytest tests/ingestion/test_openstates.py` — 6/6 passing
+- [x] `pytest tests/pipeline/test_normalization.py::TestNormalizeOpenStatesBill` — 7/7 passing
+- [x] Supabase dashboard shows legislative_items with STATUS, jurisdiction, sponsors populated
+- [x] Running the full pipeline twice produces no duplicates (idempotent)
+- [x] ingestion_runs table tracks successful run with record counts
 
 ---
 
@@ -177,13 +177,13 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] eCode360 scraper extracts Bel Air town code chapters and sections into Bronze
-- [ ] Bel Air legislation scraper extracts ordinances/resolutions into Bronze
-- [ ] Normalization produces code_sections and legislative_items in Silver
-- [ ] section_path breadcrumbs are correct (e.g., "Town of Bel Air Code > Chapter 165 > §165-23")
-- [ ] Change detection works — second run skips unchanged content
-- [ ] All normalization unit tests passing (4/4)
-- [ ] Supabase shows populated code_sections and municipal legislative_items
+- [x] eCode360 scraper extracts Bel Air town code chapters and sections into Bronze
+- [x] Bel Air legislation scraper extracts ordinances/resolutions into Bronze
+- [x] Normalization produces code_sections and legislative_items in Silver
+- [x] section_path breadcrumbs are correct (e.g., "Town of Bel Air Code > Chapter 165 > §165-23")
+- [x] Change detection works — second run skips unchanged content
+- [x] All normalization unit tests passing (4/4)
+- [x] Supabase shows populated code_sections and municipal legislative_items
 
 ---
 
@@ -234,12 +234,12 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] `python -m src.pipeline.embedder` populates document_chunks with embeddings
-- [ ] `pytest tests/pipeline/test_chunking.py` — 7/7 passing
-- [ ] Querying match_document_chunks with "fence regulations" returns relevant town code chunks
-- [ ] Jurisdiction filter (MUNICIPAL only) excludes state bill chunks
-- [ ] RAG retrieval pipeline returns formatted context with source citations
-- [ ] Document chunk count matches expected: ~1 chunk per code_section + ~1 per legislative_item
+- [x] `python -m src.pipeline.embedder` populates document_chunks with embeddings
+- [x] `pytest tests/pipeline/test_chunking.py` — 7/7 passing
+- [x] Querying match_document_chunks with "fence regulations" returns relevant town code chunks
+- [x] Jurisdiction filter (MUNICIPAL only) excludes state bill chunks
+- [x] RAG retrieval pipeline returns formatted context with source citations
+- [x] Document chunk count matches expected: ~1 chunk per code_section + ~1 per legislative_item
 
 ---
 
@@ -293,14 +293,14 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] "What are the fence regulations in Bel Air?" returns a sourced, cited answer
-- [ ] Simple queries use Gemini Flash; complex queries use Claude Sonnet
-- [ ] Empty/oversized messages are rejected with appropriate HTTP errors
-- [ ] Legal disclaimer appears at the end of every substantive answer
-- [ ] "What is the federal tax rate?" returns "I don't have information about that" (not in corpus)
-- [ ] Chat UI deployed to Vercel with example questions, citations, loading state
-- [ ] Model tier indicator shows on each response
-- [ ] End-to-end latency under 10 seconds for Gemini Flash queries
+- [x] "What are the fence regulations in Bel Air?" returns a sourced, cited answer
+- [x] Simple queries use Gemini Flash; complex queries use Claude Sonnet
+- [x] Empty/oversized messages are rejected with appropriate HTTP errors
+- [x] Legal disclaimer appears at the end of every substantive answer
+- [x] "What is the federal tax rate?" returns "I don't have information about that" (not in corpus)
+- [x] Chat UI deployed to Vercel with example questions, citations, loading state
+- [x] Model tier indicator shows on each response
+- [x] End-to-end latency under 10 seconds for Gemini Flash queries
 
 ---
 
@@ -352,13 +352,13 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] Dashboard shows state bills + town legislation with correct badges and ordering
-- [ ] Jurisdiction filter works (URL-based, bookmarkable, visual indicator)
-- [ ] Status colors are correct across all status types
-- [ ] Titles link to source documents
-- [ ] Empty state renders correctly when filtering to an unpopulated jurisdiction (COUNTY before Phase 8)
-- [ ] About page deployed with all disclaimers and data source attributions
-- [ ] Dashboard deployed to Vercel at the root URL
+- [x] Dashboard shows state bills + town legislation with correct badges and ordering
+- [x] Jurisdiction filter works (URL-based, bookmarkable, visual indicator)
+- [x] Status colors are correct across all status types
+- [x] Titles link to source documents
+- [x] Empty state renders correctly when filtering to an unpopulated jurisdiction (COUNTY before Phase 8)
+- [x] About page deployed with all disclaimers and data source attributions
+- [x] Dashboard deployed to Vercel at the root URL
 
 ---
 
@@ -399,12 +399,12 @@ Each phase has a concrete milestone that proves the system works at that layer b
 
 ### Definition of Done
 
-- [ ] GitHub Actions secrets configured (6 secrets)
-- [ ] Workflow runs successfully on push (manual dispatch test)
-- [ ] Cron schedule verified — at least one automated state bill run observed
-- [ ] Failure alerting works — simulated failure produces notification
-- [ ] Pipeline runs unattended for 48 hours with no silent failures
-- [ ] ingestion_runs table shows healthy run history
+- [x] GitHub Actions secrets configured (6 secrets)
+- [x] Workflow runs successfully on push (manual dispatch test)
+- [x] Cron schedule verified — at least one automated state bill run observed
+- [x] Failure alerting works — simulated failure produces notification
+- [x] Pipeline runs unattended for 48 hours with no silent failures
+- [x] ingestion_runs table shows healthy run history
 
 ---
 

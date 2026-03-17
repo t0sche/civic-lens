@@ -15,7 +15,7 @@ RSS feeds provide change detection without JS rendering.
 @spec INGEST-SCRAPE-004, INGEST-SCRAPE-005
 """
 
-# TODO: Implement in Phase 4
+# TODO: Implement in Phase 9+ (post-County Expansion)
 # - RSS feed polling for change detection (low effort)
 # - Headless browser scraping for historical agendas (higher effort)
 # - PDF download and handoff to extractors/pdf_extractor.py

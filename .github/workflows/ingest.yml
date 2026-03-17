@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: 'Source to ingest (openstates, legiscan, ecode360, belair, all)'
+        description: 'Source to ingest (openstates, legiscan, ecode360, ecode360_harford, belair, harford_bills, all)'
         required: false
         default: 'all'
       skip_embeddings:
@@ -57,7 +57,9 @@ jobs:
     if: |
       (github.event.schedule == '0 11 * * *') ||
       github.event.inputs.source == 'ecode360' ||
+      github.event.inputs.source == 'ecode360_harford' ||
       github.event.inputs.source == 'belair' ||
+      github.event.inputs.source == 'harford_bills' ||
       github.event.inputs.source == 'all'
     steps:
       - uses: actions/checkout@v4
@@ -82,6 +84,26 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python -m src.ingestion.scrapers.belair_legislation
+
+      - name: Scrape Harford County code (eCode360)
+        if: |
+          github.event.inputs.source == 'ecode360_harford' ||
+          github.event.inputs.source == 'all' ||
+          github.event.schedule == '0 11 * * *'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m src.ingestion.scrapers.ecode360 --municipality HA0904
+
+      - name: Scrape Harford County bills tracker
+        if: |
+          github.event.inputs.source == 'harford_bills' ||
+          github.event.inputs.source == 'all' ||
+          github.event.schedule == '0 11 * * *'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -m src.ingestion.scrapers.harford_bills
 
   normalize-and-embed:
     name: Normalize + Embed

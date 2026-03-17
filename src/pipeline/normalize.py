@@ -53,6 +53,22 @@ BELAIR_STATUS_MAP: dict[str, LegislativeStatus] = {
     "UNKNOWN": LegislativeStatus.UNKNOWN,
 }
 
+# Maps Harford County status strings (from the ASP.NET bills tracker) to
+# the unified LegislativeStatus enum.
+HARFORD_STATUS_MAP: dict[str, LegislativeStatus] = {
+    "Introduced": LegislativeStatus.INTRODUCED,
+    "Referred to Committee": LegislativeStatus.IN_COMMITTEE,
+    "In Committee": LegislativeStatus.IN_COMMITTEE,
+    "Passed": LegislativeStatus.ENACTED,
+    "Adopted": LegislativeStatus.ENACTED,
+    "Enacted": LegislativeStatus.ENACTED,
+    "Failed": LegislativeStatus.REJECTED,
+    "Withdrawn": LegislativeStatus.REJECTED,
+    "Tabled": LegislativeStatus.TABLED,
+    "Pending": LegislativeStatus.PENDING,
+    "Unknown": LegislativeStatus.UNKNOWN,
+}
+
 
 # ─── Source Normalizers ──────────────────────────────────────────────────
 
@@ -146,6 +162,52 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
     )
 
 
+def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
+    """
+    Normalize a Harford County Council bill to a LegislativeItem.
+
+    @spec DATA-PIPE-004
+    """
+    bill = json.loads(raw) if isinstance(raw, str) else raw
+
+    status_str = bill.get("status", "Unknown")
+    # Try exact match first, then case-insensitive prefix match
+    status = HARFORD_STATUS_MAP.get(status_str)
+    if status is None:
+        status_lower = status_str.lower()
+        for key, val in HARFORD_STATUS_MAP.items():
+            if key.lower() in status_lower:
+                status = val
+                break
+        else:
+            status = LegislativeStatus.UNKNOWN
+
+    # Harford County uses ordinances and resolutions as primary types
+    title = bill.get("title", "Untitled")
+    title_lower = title.lower()
+    if "resolution" in title_lower:
+        item_type = LegislativeType.RESOLUTION
+    elif "ordinance" in title_lower:
+        item_type = LegislativeType.ORDINANCE
+    else:
+        item_type = LegislativeType.BILL
+
+    return LegislativeItem(
+        bronze_id=bronze_id,
+        source_id=bill.get("bill_number", ""),
+        jurisdiction=JurisdictionLevel.COUNTY,
+        body="Harford County Council",
+        item_type=item_type,
+        title=title,
+        status=status,
+        introduced_date=_parse_date(bill.get("introduced_date")),
+        last_action_date=_parse_date(bill.get("last_action_date")),
+        last_action=bill.get("last_action"),
+        sponsors=bill.get("sponsors", []),
+        source_url=bill.get("detail_url"),
+    )
+
+
 def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> CodeSection:
     """
     Normalize an eCode360 section to a CodeSection.
@@ -188,7 +250,8 @@ def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> Code
 NORMALIZERS: dict[str, Callable] = {
     "openstates": normalize_openstates_bill,
     "belair_legislation": normalize_belair_legislation,
-    # "legiscan": normalize_legiscan_bill,  # TODO
+    "harford_bills": normalize_harford_bills,
+    # "legiscan": normalize_legiscan_bill,  # TODO (Phase 9)
     # "ecode360_belair": normalize_ecode360_section,  # Uses different signature
     # "ecode360_harford": normalize_ecode360_section,
 }

@@ -230,6 +230,15 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO)
-    # Default: scrape Bel Air town code
-    ingest_municipal_code(BEL_AIR_CODE)
+    parser = argparse.ArgumentParser(description="Scrape an eCode360 municipal code")
+    parser.add_argument(
+        "--municipality",
+        default=BEL_AIR_CODE,
+        choices=[BEL_AIR_CODE, HARFORD_COUNTY_CODE],
+        help=f"Municipality code to scrape (default: {BEL_AIR_CODE} = Bel Air)",
+    )
+    args = parser.parse_args()
+    ingest_municipal_code(args.municipality)
