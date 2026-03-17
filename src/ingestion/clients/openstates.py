@@ -12,6 +12,7 @@ API docs: https://docs.openstates.org/api-v3/
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Generator
 
 import requests
@@ -47,9 +48,23 @@ class OpenStatesClient:
         })
 
     def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict:
-        """Make an authenticated GET request with error handling."""
+        """Make an authenticated GET request with rate-limit retry."""
         url = f"{BASE_URL}{endpoint}"
-        response = self.session.get(url, params=params or {})
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            response = self.session.get(url, params=params or {})
+            if response.status_code == 429:
+                wait = 7 * (attempt + 1)
+                logger.warning("Rate limited (429). Waiting %ds before retry %d/%d", wait, attempt + 1, max_retries)
+                time.sleep(wait)
+                continue
+            if not response.ok:
+                logger.error(
+                    "API error %s %s: %s", response.status_code, response.url, response.text
+                )
+            response.raise_for_status()
+            return response.json()
+        # Final attempt after all retries exhausted
         response.raise_for_status()
         return response.json()
 
@@ -67,7 +82,7 @@ class OpenStatesClient:
             session: Legislative session (e.g., "2025"). Defaults to current.
             updated_since: ISO date string — only return bills updated after this date.
             page: Page number for pagination.
-            per_page: Results per page (max 50).
+            per_page: Results per page (max 20).
 
         Returns:
             API response with 'results' list and 'pagination' metadata.
@@ -75,8 +90,8 @@ class OpenStatesClient:
         params: dict[str, Any] = {
             "jurisdiction": MARYLAND_JURISDICTION,
             "page": page,
-            "per_page": min(per_page, 50),
-            "include": "abstracts,actions,sponsorships,sources",
+            "per_page": min(per_page, 20),
+            "include": ["abstracts", "actions", "sponsorships", "sources"],
         }
         if session:
             params["session"] = session
@@ -101,7 +116,7 @@ class OpenStatesClient:
                 session=session,
                 updated_since=updated_since,
                 page=page,
-                per_page=50,
+                per_page=20,
             )
             results = response.get("results", [])
             if not results:
@@ -113,6 +128,8 @@ class OpenStatesClient:
             if page >= pagination.get("max_page", 1):
                 break
             page += 1
+            # Stay under 10 req/min rate limit
+            time.sleep(7)
 
     def fetch_bill_detail(self, bill_id: str) -> dict:
         """Fetch full detail for a single bill by Open States ID."""
@@ -139,13 +156,13 @@ def ingest_state_bills(
         new = 0
         updated = 0
 
+        import json
+
         for bill in client.fetch_all_bills(session=session, updated_since=updated_since):
             fetched += 1
             bill_id = bill.get("id", "")
             identifier = bill.get("identifier", "unknown")
 
-            # Serialize the full bill JSON as raw content
-            import json
             raw_content = json.dumps(bill, default=str)
 
             result = upsert_bronze_document(
@@ -162,8 +179,15 @@ def ingest_state_bills(
                 url=bill.get("openstates_url"),
             )
 
-            # TODO: Track new vs. updated based on content_hash comparison
-            logger.info(f"Ingested bill {identifier} ({bill_id})")
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+                logger.info(f"New bill {identifier} ({bill_id})")
+            elif status == "updated":
+                updated += 1
+                logger.info(f"Updated bill {identifier} ({bill_id})")
+            else:
+                logger.debug(f"Skipped unchanged bill {identifier} ({bill_id})")
 
         complete_ingestion_run(
             db, run_id,

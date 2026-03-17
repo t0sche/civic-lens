@@ -179,13 +179,15 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
     try:
         chapters = scraper.fetch_table_of_contents()
         fetched = 0
+        new = 0
+        updated = 0
 
         for chapter in chapters:
             for section in scraper.fetch_chapter_sections(chapter):
                 if not section.content:
                     continue
 
-                upsert_bronze_document(
+                result = upsert_bronze_document(
                     db,
                     source=source_name,
                     source_id=section.code_id or section.url,
@@ -200,10 +202,26 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
                     url=section.url,
                 )
                 fetched += 1
-                logger.info(f"Ingested: {section.title}")
+                status = result.get("status", "")
+                if status == "new":
+                    new += 1
+                    logger.info(f"New section: {section.title}")
+                elif status == "updated":
+                    updated += 1
+                    logger.info(f"Updated section: {section.title}")
+                else:
+                    logger.debug(f"Skipped unchanged section: {section.title}")
 
-        complete_ingestion_run(db, run_id, records_fetched=fetched)
-        logger.info(f"eCode360 ingestion complete: {fetched} sections from {municipality_code}")
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=fetched,
+            records_new=new,
+            records_updated=updated,
+        )
+        logger.info(
+            f"eCode360 ingestion complete: {fetched} fetched, {new} new, "
+            f"{updated} updated from {municipality_code}"
+        )
 
     except Exception as e:
         logger.error(f"eCode360 ingestion failed: {e}")
