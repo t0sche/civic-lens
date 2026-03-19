@@ -1,0 +1,42 @@
+{
+  "zip": "21015",
+  "locality": {
+    "name": "Bel Air, Maryland",
+    "state": {
+      "name": "Maryland",
+      "abbrev": "MD",
+      "body": "Maryland General Assembly",
+      "openstates_jurisdiction": "ocd-jurisdiction/country:us/state:md/government",
+      "legiscan_state_id": 20
+    },
+    "county": {
+      "name": "Harford County",
+      "body": "Harford County Council",
+      "scrapers": {
+        "ecode360": { "code": "HA0904" },
+        "harford_bills": { "url": "https://apps.harfordcountymd.gov/Legislation/Bills" }
+      }
+    },
+    "municipal": {
+      "name": "Town of Bel Air",
+      "body": "Town of Bel Air Board of Commissioners",
+      "website": "https://www.belairmd.org",
+      "scrapers": {
+        "ecode360": { "code": "BE2811" },
+        "belair_legislation": { "url": "https://www.belairmd.org/213/Legislation" }
+      }
+    }
+  },
+  "display": {
+    "title": "CivicLens",
+    "subtitle": "Bel Air, MD",
+    "description": "Plain-language access to the laws that affect you.",
+    "footer_attribution": "Data sourced from Maryland General Assembly, Harford County, and Town of Bel Air public records.",
+    "example_questions": [
+      "What are the fence regulations in Bel Air?",
+      "Can I run a home business in a residential zone?",
+      "What are the noise ordinance hours?",
+      "What bills are being considered in the Maryland General Assembly that affect Harford County?"
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 """
-LegiScan API client for Maryland state legislative data.
+LegiScan API client for state legislative data.
 
 Serves as both a supplementary data source and fallback for Open States.
 LegiScan provides full bill text, roll call votes, and amendment tracking
@@ -30,6 +30,7 @@ from typing import Any
 import requests
 
 from src.lib.config import get_config
+from src.lib.config import get_state_config
 from src.lib.supabase import (
     complete_ingestion_run,
     get_supabase_client,
@@ -40,7 +41,9 @@ from src.lib.supabase import (
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.legiscan.com"
-MARYLAND_STATE_ID = 20  # LegiScan state ID for Maryland
+_STATE_CONFIG = get_state_config()
+MARYLAND_STATE_ID = _STATE_CONFIG["legiscan_state_id"]
+_STATE_ABBREV = _STATE_CONFIG["abbrev"]
 MONTHLY_QUERY_LIMIT = 30_000
 QUERY_WARNING_THRESHOLD = 0.80  # Warn at 80% of monthly limit
 
@@ -209,13 +212,13 @@ class LegiScanClient:
     # ─── Public API Methods ───────────────────────────────────────────
 
     def get_session_list(self) -> list[dict]:
-        """Get available Maryland legislative sessions."""
-        cache_path = self._cache_path("getSessionList", state="MD")
+        """Get available state legislative sessions."""
+        cache_path = self._cache_path("getSessionList", state=_STATE_ABBREV)
         cached = self._read_cache(cache_path)
         if cached is not None:
             return cached.get("sessions", [])
 
-        data = self._get({"op": "getSessionList", "state": "MD"})
+        data = self._get({"op": "getSessionList", "state": _STATE_ABBREV})
         self._write_cache(cache_path, data)
         return data.get("sessions", [])
 
@@ -262,7 +265,7 @@ class LegiScanClient:
         self._write_cache(cache_path, data)
         return data.get("text", {})
 
-    def search_bills(self, query: str, state: str = "MD", page: int = 1) -> dict:
+    def search_bills(self, query: str, state: str = _STATE_ABBREV, page: int = 1) -> dict:
         """Search bills by keyword."""
         data = self._get({
             "op": "search",
@@ -274,7 +277,7 @@ class LegiScanClient:
 
     def get_dataset_list(self, session_id: int) -> list[dict]:
         """Get available dataset archives for a session."""
-        data = self._get({"op": "getDatasetList", "state": "MD", "id": session_id})
+        data = self._get({"op": "getDatasetList", "state": _STATE_ABBREV, "id": session_id})
         return data.get("datasetlist", [])
 
     def get_dataset(self, dataset_id: int) -> dict:
@@ -361,7 +364,7 @@ class LegiScanClient:
 
 def ingest_legiscan_bills(session_id: int | None = None) -> None:
     """
-    Ingest Maryland bills from LegiScan into the Bronze layer.
+    Ingest state bills from LegiScan into the Bronze layer.
 
     Uses change_hash comparison to only fetch bills that have changed
     since the last ingestion run, minimizing API query spend.
@@ -379,7 +382,7 @@ def ingest_legiscan_bills(session_id: int | None = None) -> None:
         if session_id is None:
             sessions = client.get_session_list()
             if not sessions:
-                raise RuntimeError("No Maryland sessions found on LegiScan")
+                raise RuntimeError(f"No {_STATE_ABBREV} sessions found on LegiScan")
             session_id = sessions[0]["session_id"]
             logger.info(f"Using most recent session: {sessions[0].get('session_name', session_id)}")
 
@@ -408,7 +411,7 @@ def ingest_legiscan_bills(session_id: int | None = None) -> None:
                 raw_metadata={
                     "bill_number": bill_detail.get("bill_number", ""),
                     "session_id": session_id,
-                    "state": "MD",
+                    "state": _STATE_ABBREV,
                     "change_hash": bill_detail.get("change_hash", ""),
                     "legiscan_attribution": "Data provided by LegiScan (CC BY 4.0)",
                 },

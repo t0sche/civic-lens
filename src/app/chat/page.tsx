@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import config from "../../../civic-lens.config.json";
 
 /**
  * Chat interface for asking questions about local law.
@@ -25,12 +26,7 @@ interface Source {
   data_source?: string;
 }
 
-const EXAMPLE_QUESTIONS = [
-  "What are the fence regulations in Bel Air?",
-  "Can I run a home business in a residential zone?",
-  "What are the noise ordinance hours?",
-  "What bills are being considered in the Maryland General Assembly that affect Harford County?",
-];
+const EXAMPLE_QUESTIONS = config.display.example_questions;
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -98,8 +94,8 @@ export default function ChatPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Ask About Local Law</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Ask plain-language questions about laws, ordinances, and regulations
-          affecting Bel Air, MD across state, county, and municipal government.
+          Ask plain-language questions about laws, ordinances, and regulations{" "}
+          {`affecting ${config.display.subtitle} across state, county, and municipal government.`}
         </p>
       </div>
 
