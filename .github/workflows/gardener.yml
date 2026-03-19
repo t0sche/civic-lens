@@ -19,7 +19,7 @@ on:
       deploy_url:
         description: 'Override deployment URL to test'
         required: false
-        default: ''
+        default: 'https://civic-lens-git-dev-t0sches-projects.vercel.app/'
       run_intent_audit:
         description: 'Run the agentic intent audit (uses Claude API credits)'
         type: boolean
