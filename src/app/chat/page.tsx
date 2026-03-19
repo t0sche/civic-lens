@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
 import config from "../../../civic-lens.config.json";
 import { useState, useRef, useEffect, useCallback } from "react";
 
