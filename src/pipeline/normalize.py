@@ -176,7 +176,7 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
     if status is None:
         status_lower = status_str.lower()
         for key, val in HARFORD_STATUS_MAP.items():
-            if key.lower() in status_lower:
+            if status_lower.startswith(key.lower()):
                 status = val
                 break
         else:
