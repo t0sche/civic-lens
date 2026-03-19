@@ -1,17 +1,16 @@
 """
 Tests for section-aware document chunking.
 
-@spec DATA-EMBED-001, DATA-EMBED-002
+@spec EMBED-CHUNK-001, EMBED-CHUNK-002, EMBED-CHUNK-003, EMBED-CHUNK-010, EMBED-CHUNK-011
 """
 
-import pytest
 
+from src.lib.models import ChunkSourceType
 from src.pipeline.embedder import (
+    MAX_CHUNK_CHARS,
     chunk_code_section,
     chunk_legislative_item,
-    MAX_CHUNK_CHARS,
 )
-from src.lib.models import ChunkSourceType
 
 
 class TestChunkCodeSection:

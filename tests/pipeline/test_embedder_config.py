@@ -7,11 +7,10 @@ pgvector schema) is accepted, and that incompatible models are rejected.
 @spec DATA-EMBED-003
 """
 
-from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.pipeline.embedder import generate_embeddings, EMBEDDING_DIM
+from src.pipeline.embedder import EMBEDDING_DIM, generate_embeddings
 
 
 class TestEmbeddingModelValidation:

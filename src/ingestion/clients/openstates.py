@@ -19,10 +19,10 @@ import requests
 
 from src.lib.config import get_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,10 @@ class OpenStatesClient:
             response = self.session.get(url, params=params or {})
             if response.status_code == 429:
                 wait = 7 * (attempt + 1)
-                logger.warning("Rate limited (429). Waiting %ds before retry %d/%d", wait, attempt + 1, max_retries)
+                logger.warning(
+                    "Rate limited (429). Waiting %ds before retry %d/%d",
+                    wait, attempt + 1, max_retries,
+                )
                 time.sleep(wait)
                 continue
             if not response.ok:

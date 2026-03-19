@@ -86,9 +86,10 @@ function jurisdictionLabel(jurisdiction: string): {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { jurisdiction?: string };
+  searchParams: Promise<{ jurisdiction?: string }>;
 }) {
-  const jurisdiction = (searchParams.jurisdiction || "ALL") as JurisdictionFilter;
+  const { jurisdiction: rawJurisdiction } = await searchParams;
+  const jurisdiction = (rawJurisdiction || "ALL") as JurisdictionFilter;
   const items = await fetchLegislativeItems(jurisdiction);
 
   return (

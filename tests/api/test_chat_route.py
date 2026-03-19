@@ -7,8 +7,6 @@ Integration tests (hitting real Supabase + LLM APIs) run separately.
 @spec CHAT-API-001, CHAT-API-002, CHAT-API-003, CHAT-API-004, CHAT-API-005
 """
 
-import json
-import pytest
 
 
 class TestChatRequestValidation:

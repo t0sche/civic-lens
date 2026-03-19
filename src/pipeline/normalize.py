@@ -7,7 +7,7 @@ legislative_item and code_section schemas in the Silver layer.
 Each source has a dedicated normalizer function that maps source-specific
 fields to the unified data model.
 
-@spec DATA-PIPE-001, DATA-PIPE-002
+@spec DATA-PIPE-010, DATA-PIPE-020, DATA-PIPE-060
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import Any, Callable
+from typing import Callable
 
 from src.lib.models import (
-    LegislativeItem,
     CodeSection,
     JurisdictionLevel,
+    LegislativeItem,
     LegislativeStatus,
     LegislativeType,
 )
@@ -77,7 +77,7 @@ def normalize_openstates_bill(bronze_id: str, raw: dict) -> LegislativeItem:
     """
     Normalize an Open States bill record to a LegislativeItem.
 
-    @spec DATA-PIPE-001
+    @spec DATA-PIPE-001, DATA-PIPE-002, DATA-PIPE-003
     """
     bill = json.loads(raw) if isinstance(raw, str) else raw
 
@@ -137,7 +137,7 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
     """
     Normalize a Bel Air legislation entry to a LegislativeItem.
 
-    @spec DATA-PIPE-002
+    @spec DATA-PIPE-010, DATA-PIPE-011, DATA-PIPE-012
     """
     entry = json.loads(raw) if isinstance(raw, str) else raw
 
@@ -166,7 +166,7 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
     """
     Normalize a Harford County Council bill to a LegislativeItem.
 
-    @spec DATA-PIPE-004
+    @spec DATA-PIPE-013, DATA-PIPE-014, DATA-PIPE-015
     """
     bill = json.loads(raw) if isinstance(raw, str) else raw
 
@@ -212,7 +212,7 @@ def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> Code
     """
     Normalize an eCode360 section to a CodeSection.
 
-    @spec DATA-PIPE-003
+    @spec DATA-PIPE-020, DATA-PIPE-021, DATA-PIPE-022, DATA-PIPE-023
     """
     municipality_code = metadata.get("municipality_code", "")
 
@@ -264,7 +264,7 @@ def run_normalization(source: str | None = None) -> None:
     Reads unprocessed Bronze records, normalizes them, and upserts to
     the Silver layer.
 
-    @spec DATA-PIPE-001
+    @spec DATA-PIPE-060, DATA-PIPE-061
     """
     db = get_supabase_client()
 

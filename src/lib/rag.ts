@@ -13,6 +13,17 @@
 
 import { createServerClient } from "./supabase-client";
 
+interface MatchDocumentChunkRow {
+  id: string;
+  chunk_text: string;
+  section_path: string | null;
+  jurisdiction: string;
+  source_type: string;
+  source_id: string;
+  similarity: number;
+  metadata: Record<string, unknown> | null;
+}
+
 export interface RetrievedChunk {
   id: string;
   chunk_text: string;
@@ -90,7 +101,7 @@ export async function retrieveContext(
     return { chunks: [], uniqueDocCount: 0, jurisdictions: [] };
   }
 
-  const chunks: RetrievedChunk[] = (data || []).map((row: any) => ({
+  const chunks: RetrievedChunk[] = (data as MatchDocumentChunkRow[] || []).map((row) => ({
     id: row.id,
     chunk_text: row.chunk_text,
     section_path: row.section_path,

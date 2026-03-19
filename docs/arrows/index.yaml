@@ -1,5 +1,5 @@
 schema_version: 1
-last_updated: 2026-03-17
+last_updated: 2026-03-19
 # Phases 1-7 implemented and deployed as of 2026-03-17. Phase 8 starting.
 
 # Arrow of Intent Index — CivicLens
@@ -19,24 +19,24 @@ arrows:
     drift: null
 
   ingestion-apis:
-    status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
-    next: "Phase 9: LegiScan integration as supplementary source"
-    drift: null
+    next: "Phase 9: arcgis.py/youtube.py stubs; INGEST-API-040 empty record validation; 5xx retry"
+    drift: "legiscan.py @spec annotations corrected to INGEST-API-010-013; arcgis.py and youtube.py missing"
 
   ingestion-scraping:
-    status: IN_PROGRESS
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
-    next: "Phase 8: Implement harford_bills.py (ASP.NET scraper); run ecode360 with HA0904"
-    drift: "harford_bills.py is a stub; civicplus_agenda.py is deferred"
+    next: "Phase 9+: civicplus_agenda.py (headless browser); belair User-Agent contact URL"
+    drift: "civicplus_agenda.py is a stub (Phase 9+); harford_bills.py is fully implemented (335 lines)"
 
   ingestion-pdf:
     status: DEFERRED
@@ -49,14 +49,14 @@ arrows:
     drift: null
 
   data-pipeline:
-    status: IN_PROGRESS
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [embeddings, dashboard]
     blockedBy: [ingestion-apis]
     detail: data-pipeline.md
-    next: "Phase 8: Add normalize_harford_bills; LegiScan dedup (Phase 9)"
-    drift: "harford_bills normalizer not yet added to NORMALIZERS registry"
+    next: "Phase 9: validate.py for Silver layer validation; enrich.py stub; LegiScan dedup"
+    drift: "normalize_harford_bills is registered in NORMALIZERS; validate.py and enrich.py not yet created"
 
   embeddings:
     status: IMPLEMENTED
