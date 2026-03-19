@@ -355,4 +355,4 @@ jobs:
           gh issue create \
             --title "Gardener: health check failures $(date -u +'%Y-%m-%d')" \
             --body "${{ steps.failures.outputs.body }}" \
-            --label "gardener,maintenance"
+            --label "gardener"
