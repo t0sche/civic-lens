@@ -18,7 +18,9 @@ export async function GET() {
   // Latest ingestion run per source
   const { data: runs, error: runsError } = await db
     .from("ingestion_runs")
-    .select("*")
+    .select(
+      "source,status,started_at,completed_at,records_fetched,records_new,records_updated,error_message"
+    )
     .order("started_at", { ascending: false });
 
   if (runsError) {
