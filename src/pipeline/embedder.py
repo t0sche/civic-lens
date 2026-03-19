@@ -168,6 +168,7 @@ def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
         result = client.models.embed_content(
             model="text-embedding-004",
             contents=text,
+            config={"task_type": "RETRIEVAL_DOCUMENT"},
         )
         values = result.embeddings[0].values
         if len(values) != EMBEDDING_DIM:

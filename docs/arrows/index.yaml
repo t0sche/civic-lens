@@ -29,7 +29,7 @@ arrows:
     drift: "INGEST-API-040/041 (reject empty content/source_id) not implemented in upsert_bronze_document(); INGEST-API-007 (5xx retry with 10s delay) missing — raise_for_status() fires immediately"
 
   ingestion-scraping:
-    status: IN_PROGRESS
+    status: PARTIALLY_IMPLEMENTED
     sampled: 2026-03-19
     audited: 2026-03-19
     blocks: [ingestion-pdf]
