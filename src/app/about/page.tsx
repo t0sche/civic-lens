@@ -1,18 +1,38 @@
 import config from "../../../civic-lens.config.json";
 
+function formatJurisdictionCount(count: number): string {
+  switch (count) {
+    case 1:
+      return "one";
+    case 2:
+      return "two";
+    case 3:
+      return "three";
+    default:
+      return String(count);
+  }
+}
+
+function formatJurisdictionList(jurisdictions: string[]): string {
+  if (jurisdictions.length === 0) return "";
+  if (jurisdictions.length === 1) return jurisdictions[0];
+  if (jurisdictions.length === 2) {
+    return `${jurisdictions[0]} and ${jurisdictions[1]}`;
+  }
+  const allButLast = jurisdictions.slice(0, -1).join(", ");
+  const last = jurisdictions[jurisdictions.length - 1];
+  return `${allButLast}, and ${last}`;
+}
+
 export default function AboutPage() {
   const { locality, zip } = config;
   const jurisdictions: string[] = [];
   if (locality.state) jurisdictions.push(`${locality.state.name} State`);
   if (locality.county) jurisdictions.push(locality.county.name);
   if (locality.municipal) jurisdictions.push(locality.municipal.name);
-  const jurisdictionCount =
-    jurisdictions.length === 2
-      ? "two"
-      : jurisdictions.length === 3
-        ? "three"
-        : String(jurisdictions.length);
-  const jurisdictionList = jurisdictions.join(", and ");
+  const jurisdictionCount = jurisdictions.length;
+  const jurisdictionCountWord = formatJurisdictionCount(jurisdictionCount);
+  const jurisdictionList = formatJurisdictionList(jurisdictions);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
@@ -22,8 +42,9 @@ export default function AboutPage() {
         <p>
           CivicLens is a civic transparency project that makes government data
           accessible to residents of {`${locality.name} (${zip})`}. It aggregates
-          legislative data from {jurisdictionCount} levels of government — {jurisdictionList} — into a single searchable
-          interface.
+          legislative data from {jurisdictionCountWord}{" "}
+          {jurisdictionCount === 1 ? "level" : "levels"} of government —{" "}
+          {jurisdictionList} — into a single searchable interface.
         </p>
 
         <h2 className="mt-8 text-lg font-semibold text-gray-900">
@@ -31,9 +52,11 @@ export default function AboutPage() {
         </h2>
         <p>
           The <strong>Legislative Tracker</strong> shows active and proposed
-          bills, ordinances, resolutions, and policy changes across all {jurisdictionCount}{" "}
-          jurisdictions. The <strong>Chat</strong> interface lets you ask
-          plain-language questions about local law and get sourced answers.
+          bills, ordinances, resolutions, and policy changes across all{" "}
+          {jurisdictionCountWord}{" "}
+          {jurisdictionCount === 1 ? "jurisdiction" : "jurisdictions"}. The{" "}
+          <strong>Chat</strong> interface lets you ask plain-language questions
+          about local law and get sourced answers.
         </p>
 
         <h2 className="mt-8 text-lg font-semibold text-gray-900">
