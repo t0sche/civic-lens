@@ -338,18 +338,25 @@ jobs:
           fi
 
       - name: Smoke test — HTTP health check
+        id: health
         if: steps.url.outputs.skip != 'true'
         run: |
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.url.outputs.url }}")
           echo "HTTP status: $HTTP_CODE"
-          if [ "$HTTP_CODE" -ne 200 ]; then
+          if [ "$HTTP_CODE" -eq 401 ]; then
+            echo "::warning::Deployment is protected (HTTP 401 — Vercel deployment protection active). Skipping E2E tests."
+            echo "protected=true" >> "$GITHUB_OUTPUT"
+            echo "Deployment reachable but protected (HTTP 401) — E2E tests skipped." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$HTTP_CODE" -ne 200 ]; then
             echo "::error::Deployment health check failed with HTTP $HTTP_CODE"
             exit 1
+          else
+            echo "protected=false" >> "$GITHUB_OUTPUT"
+            echo "Deployment is healthy (HTTP 200)." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "Deployment is healthy (HTTP 200)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke test — chat endpoint reachable
-        if: steps.url.outputs.skip != 'true'
+        if: steps.url.outputs.skip != 'true' && steps.health.outputs.protected != 'true'
         run: |
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.url.outputs.url }}/chat")
           echo "Chat page HTTP status: $HTTP_CODE"
@@ -359,13 +366,13 @@ jobs:
           fi
 
       - name: Run Playwright E2E tests
-        if: steps.url.outputs.skip != 'true'
+        if: steps.url.outputs.skip != 'true' && steps.health.outputs.protected != 'true'
         env:
           DEPLOY_URL: ${{ steps.url.outputs.url }}
         run: npx playwright test --project=chromium
 
       - name: Upload Playwright report
-        if: always() && steps.url.outputs.skip != 'true'
+        if: always() && steps.url.outputs.skip != 'true' && steps.health.outputs.protected != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
