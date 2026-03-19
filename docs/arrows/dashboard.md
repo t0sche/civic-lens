@@ -18,11 +18,11 @@ Legislative tracker dashboard: filterable views of active/proposed legislation a
 - docs/specs/dashboard-specs.md (26 specs: 20 active, 6 deferred)
 
 ### Tests
-- tests/api/test_dashboard_queries.py
+- No dedicated dashboard test suite yet; add coverage when the dashboard is decomposed into components or an API layer is introduced.
 
 ### Code
-- src/app/page.tsx — dashboard implemented monolithically (filtering, cards, layout all in one file)
-- src/api/dashboard/route.ts — API route for dashboard data
+- src/app/page.tsx — dashboard implemented monolithically (filtering, cards, layout, and SSR data fetching all in one file)
+- Planned API route for dashboard data — not yet implemented; see "Work Required" §Must Fix item 4
 
 ## Architecture
 
