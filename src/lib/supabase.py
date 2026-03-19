@@ -9,11 +9,9 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
-
-from supabase import create_client, Client
 
 from src.lib.config import get_config
+from supabase import Client, create_client
 
 
 def get_supabase_client() -> Client:

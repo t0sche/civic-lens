@@ -30,13 +30,13 @@ arrows:
 
   ingestion-scraping:
     status: IN_PROGRESS
-    sampled: 2026-03-14
+    sampled: 2026-03-19
     audited: 2026-03-17
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
-    next: "Phase 8: Implement harford_bills.py (ASP.NET scraper); run ecode360 with HA0904"
-    drift: "harford_bills.py is a stub; civicplus_agenda.py is deferred"
+    next: "Phase 8: run ecode360 with HA0904; civicplus_agenda.py deferred to Phase 8+"
+    drift: "civicplus_agenda.py is deferred (Phase 8+); harford_bills.py is fully implemented"
 
   ingestion-pdf:
     status: DEFERRED
@@ -50,13 +50,13 @@ arrows:
 
   data-pipeline:
     status: IN_PROGRESS
-    sampled: 2026-03-14
+    sampled: 2026-03-19
     audited: 2026-03-17
     blocks: [embeddings, dashboard]
     blockedBy: [ingestion-apis]
     detail: data-pipeline.md
-    next: "Phase 8: Add normalize_harford_bills; LegiScan dedup (Phase 9)"
-    drift: "harford_bills normalizer not yet added to NORMALIZERS registry"
+    next: "Phase 8: Add validate.py (DATA-PIPE-040/041/042); LegiScan normalizer (Phase 9)"
+    drift: "src/pipeline/validate.py missing — DATA-PIPE-040/041/042 (Silver layer validation) not yet implemented"
 
   embeddings:
     status: IMPLEMENTED

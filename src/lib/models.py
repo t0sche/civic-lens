@@ -6,13 +6,12 @@ All ingestion normalizers produce instances of these models before writing
 to the Silver layer.
 """
 
-from datetime import date, datetime
+from datetime import date
 from enum import Enum
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
-
 
 # ─── Enums matching Postgres types ──────────────────────────────────────
 

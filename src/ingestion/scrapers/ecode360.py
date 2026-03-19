@@ -21,12 +21,11 @@ from typing import Generator
 import cloudscraper
 from bs4 import BeautifulSoup
 
-from src.lib.config import get_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
