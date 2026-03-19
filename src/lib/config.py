@@ -15,7 +15,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-# Project root: two levels up from src/lib/config.py
+# Project root: three levels up from src/lib/config.py
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Load .env.local for local dev; GitHub Actions uses repository secrets
