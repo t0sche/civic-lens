@@ -20,13 +20,13 @@ from typing import Generator
 import cloudscraper
 from bs4 import BeautifulSoup
 
+from src.lib.config import get_scraper_config
 from src.lib.supabase import (
     complete_ingestion_run,
     get_supabase_client,
     start_ingestion_run,
     upsert_bronze_document,
 )
-from src.lib.config import get_scraper_config
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +242,10 @@ if __name__ == "__main__":
         "--municipality",
         default=available_codes[0] if available_codes else None,
         choices=available_codes or None,
-        help=f"Municipality code to scrape (default: {available_codes[0] if available_codes else 'none configured'})",
+        help=(
+            f"Municipality code to scrape "
+            f"(default: {available_codes[0] if available_codes else 'none configured'})"
+        ),
     )
     args = parser.parse_args()
     if args.municipality:

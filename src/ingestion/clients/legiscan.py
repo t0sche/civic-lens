@@ -29,8 +29,7 @@ from typing import Any
 
 import requests
 
-from src.lib.config import get_config
-from src.lib.config import get_state_config
+from src.lib.config import get_config, get_state_config
 from src.lib.supabase import (
     complete_ingestion_run,
     get_supabase_client,
