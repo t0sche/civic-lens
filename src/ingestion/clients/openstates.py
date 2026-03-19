@@ -62,6 +62,14 @@ class OpenStatesClient:
                 )
                 time.sleep(wait)
                 continue
+            if response.status_code >= 500:  # @spec INGEST-API-007: 5xx retry with 10s delay
+                if attempt < max_retries:
+                    logger.warning(
+                        "Server error %s %s. Waiting 10s before retry %d/%d",
+                        response.status_code, response.url, attempt + 1, max_retries
+                    )
+                    time.sleep(10)
+                    continue
             if not response.ok:
                 logger.error(
                     "API error %s %s: %s", response.status_code, response.url, response.text

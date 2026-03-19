@@ -52,4 +52,9 @@ class Config:
 
 def get_config() -> Config:
     """Get application configuration. Raises on missing required vars."""
-    return Config()
+    # @spec INFRA-ENV-003
+    try:
+        return Config()
+    except KeyError as exc:
+        key = str(exc).strip("'\"")
+        raise ValueError(f"Missing required environment variable: {key}") from exc
