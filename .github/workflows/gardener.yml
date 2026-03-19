@@ -24,7 +24,7 @@ on:
       deploy_url:
         description: 'Override deployment URL to test'
         required: false
-        default: ''
+        default: 'https://civic-lens-git-dev-t0sches-projects.vercel.app/'
       run_intent_audit:
         description: 'Run the agentic intent audit (uses Claude API credits)'
         type: boolean
@@ -492,8 +492,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' &&
       always() &&
-      (needs.lint-and-typecheck.result == 'success' || needs.lint-and-typecheck.result == 'skipped') &&
-      (needs.build-check.result == 'success' || needs.build-check.result == 'skipped') &&
+      github.event_name != 'pull_request' &&
       (github.event.inputs.run_intent_audit != 'false')
     steps:
       - uses: actions/checkout@v4
@@ -515,10 +514,23 @@ jobs:
           git config user.name "CivicLens Gardener"
           git config user.email "gardener@civiclens.dev"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
       - name: Run intent audit
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GARDENER_LINT_RESULT: ${{ needs.lint-and-typecheck.result }}
+          GARDENER_PYLINT_RESULT: ${{ needs.python-lint.result }}
+          GARDENER_BUILD_RESULT: ${{ needs.build-check.result }}
+          GARDENER_TEST_RESULT: ${{ needs.python-tests.result }}
         run: |
           FIX_FLAG=""
           if [ "${{ github.event.inputs.fix_mode }}" != "false" ]; then

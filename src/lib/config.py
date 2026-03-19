@@ -21,10 +21,14 @@ class Config:
 
     # Supabase
     supabase_url: str = field(default_factory=lambda: os.environ["NEXT_PUBLIC_SUPABASE_URL"])
-    supabase_service_key: str = field(default_factory=lambda: os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+    supabase_service_key: str = field(
+        default_factory=lambda: os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+    )
 
     # Data source APIs
-    openstates_api_key: str = field(default_factory=lambda: os.environ.get("OPENSTATES_API_KEY", ""))
+    openstates_api_key: str = field(
+        default_factory=lambda: os.environ.get("OPENSTATES_API_KEY", "")
+    )
     legiscan_api_key: str = field(default_factory=lambda: os.environ.get("LEGISCAN_API_KEY", ""))
     youtube_api_key: str = field(default_factory=lambda: os.environ.get("YOUTUBE_API_KEY", ""))
 
@@ -36,7 +40,9 @@ class Config:
         default_factory=lambda: int(os.environ.get("MODEL_ROUTING_DOC_THRESHOLD", "3"))
     )
     rag_top_k: int = field(default_factory=lambda: int(os.environ.get("RAG_TOP_K", "8")))
-    embedding_model: str = field(default_factory=lambda: os.environ.get("EMBEDDING_MODEL", "gemini"))
+    embedding_model: str = field(
+        default_factory=lambda: os.environ.get("EMBEDDING_MODEL", "gemini")
+    )
 
     # Jurisdiction constants for Bel Air MVP
     state_jurisdiction: str = "Maryland"

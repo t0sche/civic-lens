@@ -8,24 +8,24 @@ with their status (Pending, Approved, Tabled, Expired, Rejected).
 This is the simplest scraping target — a single HTML table with
 links to PDF documents in the CivicPlus DocumentCenter.
 
-@spec INGEST-SCRAPE-003
+@spec INGEST-SCRAPE-010, INGEST-SCRAPE-011, INGEST-SCRAPE-012,
+      INGEST-SCRAPE-013, INGEST-SCRAPE-014, INGEST-SCRAPE-015
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 import requests
 from bs4 import BeautifulSoup
 
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,8 @@ def ingest_belair_legislation() -> None:
     """
     Main entry point: scrape Bel Air legislation and write to Bronze layer.
 
-    @spec INGEST-SCRAPE-003
+    @spec INGEST-SCRAPE-010, INGEST-SCRAPE-011, INGEST-SCRAPE-012,
+          INGEST-SCRAPE-013, INGEST-SCRAPE-014, INGEST-SCRAPE-015
     """
     db = get_supabase_client()
     run_id = start_ingestion_run(db, "belair_legislation")
@@ -135,11 +136,13 @@ def ingest_belair_legislation() -> None:
     try:
         entries = scrape_legislation_page()
         fetched = 0
+        new = 0
+        updated = 0
 
         for entry in entries:
             raw_content = json.dumps(asdict(entry), default=str)
 
-            upsert_bronze_document(
+            result = upsert_bronze_document(
                 db,
                 source="belair_legislation",
                 source_id=entry.number,
@@ -153,9 +156,22 @@ def ingest_belair_legislation() -> None:
                 url=entry.pdf_url or LEGISLATION_URL,
             )
             fetched += 1
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+            elif status == "updated":
+                updated += 1
 
-        complete_ingestion_run(db, run_id, records_fetched=fetched)
-        logger.info(f"Bel Air legislation ingestion complete: {fetched} entries")
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=fetched,
+            records_new=new,
+            records_updated=updated,
+        )
+        logger.info(
+            f"Bel Air legislation ingestion complete: {fetched} fetched, "
+            f"{new} new, {updated} updated"
+        )
 
     except Exception as e:
         logger.error(f"Bel Air legislation ingestion failed: {e}")

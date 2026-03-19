@@ -6,17 +6,16 @@ Tests for the Bronze → Silver normalization pipeline.
 
 import json
 
-import pytest
-
-from src.pipeline.normalize import (
-    normalize_openstates_bill,
-    normalize_belair_legislation,
-    normalize_ecode360_section,
-)
 from src.lib.models import (
     JurisdictionLevel,
     LegislativeStatus,
     LegislativeType,
+)
+from src.pipeline.normalize import (
+    normalize_belair_legislation,
+    normalize_ecode360_section,
+    normalize_harford_bills,
+    normalize_openstates_bill,
 )
 
 
@@ -65,8 +64,10 @@ class TestNormalizeOpenStatesBill:
     def test_status_from_action_classification(self):
         """Status is derived from the most recent action's classification."""
         bill = self._make_bill(actions=[
-            {"date": "2026-01-15", "description": "Introduced", "classification": ["introduction"]},
-            {"date": "2026-02-01", "description": "Signed by Governor", "classification": ["signed"]},
+            {"date": "2026-01-15", "description": "Introduced",
+             "classification": ["introduction"]},
+            {"date": "2026-02-01", "description": "Signed by Governor",
+             "classification": ["signed"]},
         ])
         item = normalize_openstates_bill("bronze-123", json.dumps(bill))
         assert item.status == LegislativeStatus.ENACTED
@@ -101,7 +102,8 @@ class TestNormalizeOpenStatesBill:
     def test_unknown_status_default(self):
         """Bills with no recognized action classification default to UNKNOWN."""
         bill = self._make_bill(actions=[
-            {"date": "2026-01-15", "description": "Something unusual", "classification": ["unusual-action"]},
+            {"date": "2026-01-15", "description": "Something unusual",
+             "classification": ["unusual-action"]},
         ])
         item = normalize_openstates_bill("bronze-123", json.dumps(bill))
         assert item.status == LegislativeStatus.UNKNOWN
@@ -161,7 +163,11 @@ class TestNormalizeEcode360Section:
         assert section.chapter == "Chapter 165 - Development Regulations"
         assert section.section == "§165-23 Fences and walls"
         assert "six feet" in section.content
-        assert section.section_path == "Town of Bel Air Code > Chapter 165 - Development Regulations > §165-23 Fences and walls"
+        expected_path = (
+            "Town of Bel Air Code > Chapter 165 - Development Regulations"
+            " > §165-23 Fences and walls"
+        )
+        assert section.section_path == expected_path
 
     def test_harford_section(self):
         """Harford County code sections have correct jurisdiction."""
@@ -177,3 +183,49 @@ class TestNormalizeEcode360Section:
 
         assert section.jurisdiction == JurisdictionLevel.COUNTY
         assert section.code_source == "Harford County Code"
+
+
+class TestNormalizeHarfordBills:
+    """Tests for Harford County bills → LegislativeItem normalization."""
+
+    def test_basic_bill(self):
+        """County bill is correctly normalized with COUNTY jurisdiction."""
+        entry = json.dumps({
+            "bill_number": "Bill 23-001",
+            "title": "Bill to Amend Zoning Regulations",
+            "status": "Introduced",
+            "sponsors": ["Councilman Smith", "Councilwoman Jones"],
+            "introduced_date": "2023-01-10",
+            "last_action": "Referred to Planning Committee",
+            "last_action_date": "2023-01-15",
+            "detail_url": "https://apps.harfordcountymd.gov/Legislation/Bills/23-001",
+        })
+        item = normalize_harford_bills("bronze-hc-001", entry)
+
+        assert item.source_id == "Bill 23-001"
+        assert item.jurisdiction == JurisdictionLevel.COUNTY
+        assert item.body == "Harford County Council"
+        assert item.status == LegislativeStatus.INTRODUCED
+        assert item.sponsors == ["Councilman Smith", "Councilwoman Jones"]
+
+    def test_resolution_type(self):
+        """Bills with 'resolution' in title map to RESOLUTION type."""
+        entry = json.dumps({
+            "bill_number": "Resolution 23-005",
+            "title": "A Resolution Honoring Emergency Services",
+            "status": "Passed",
+        })
+        item = normalize_harford_bills("bronze-hc-002", entry)
+
+        assert item.item_type == LegislativeType.RESOLUTION
+        assert item.status == LegislativeStatus.ENACTED
+
+    def test_unknown_status_defaults(self):
+        """Unrecognized status strings default to UNKNOWN."""
+        entry = json.dumps({
+            "bill_number": "Bill 23-010",
+            "title": "Some County Bill",
+            "status": "Unrecognized Status String",
+        })
+        item = normalize_harford_bills("bronze-hc-003", entry)
+        assert item.status == LegislativeStatus.UNKNOWN

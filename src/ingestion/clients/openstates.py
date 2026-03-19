@@ -11,6 +11,7 @@ API docs: https://docs.openstates.org/api-v3/
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any, Generator
@@ -19,10 +20,10 @@ import requests
 
 from src.lib.config import get_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,8 +55,11 @@ class OpenStatesClient:
         for attempt in range(max_retries + 1):
             response = self.session.get(url, params=params or {})
             if response.status_code == 429:
-                wait = 7 * (attempt + 1)
-                logger.warning("Rate limited (429). Waiting %ds before retry %d/%d", wait, attempt + 1, max_retries)
+                wait = 5 * (2 ** attempt)  # @spec INGEST-API-006: 5s exponential backoff
+                logger.warning(
+                    "Rate limited (429). Waiting %ds before retry %d/%d",
+                    wait, attempt + 1, max_retries
+                )
                 time.sleep(wait)
                 continue
             if not response.ok:
@@ -161,8 +165,6 @@ def ingest_state_bills(
             bill_id = bill.get("id", "")
             identifier = bill.get("identifier", "unknown")
 
-            # Serialize the full bill JSON as raw content
-            import json
             raw_content = json.dumps(bill, default=str)
 
             result = upsert_bronze_document(
@@ -179,8 +181,15 @@ def ingest_state_bills(
                 url=bill.get("openstates_url"),
             )
 
-            # TODO: Track new vs. updated based on content_hash comparison
-            logger.info(f"Ingested bill {identifier} ({bill_id})")
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+                logger.info(f"New bill {identifier} ({bill_id})")
+            elif status == "updated":
+                updated += 1
+                logger.info(f"Updated bill {identifier} ({bill_id})")
+            else:
+                logger.debug(f"Skipped unchanged bill {identifier} ({bill_id})")
 
         complete_ingestion_run(
             db, run_id,

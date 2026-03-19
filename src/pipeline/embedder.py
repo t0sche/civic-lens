@@ -9,14 +9,12 @@ boundaries, not by token count. This preserves the semantic units
 of legal text — statutes, ordinances, and code sections are naturally
 bounded by section numbers.
 
-@spec DATA-EMBED-001, DATA-EMBED-002, DATA-EMBED-003
+@spec EMBED-CHUNK-001, EMBED-GEN-001, EMBED-WRITE-001
 """
 
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any
 
 from src.lib.config import get_config
 from src.lib.models import ChunkSourceType, DocumentChunk, JurisdictionLevel
@@ -45,7 +43,8 @@ def chunk_code_section(
     Short sections (< MAX_CHUNK_CHARS) become a single chunk.
     Long sections are sub-chunked at paragraph boundaries with overlap.
 
-    @spec DATA-EMBED-001
+    @spec EMBED-CHUNK-001, EMBED-CHUNK-002, EMBED-CHUNK-003,
+          EMBED-CHUNK-004, EMBED-CHUNK-005, EMBED-CHUNK-006
     """
     if len(content) <= MAX_CHUNK_CHARS:
         return [DocumentChunk(
@@ -109,7 +108,7 @@ def chunk_legislative_item(
     For MVP, legislative items are typically short enough for a single chunk
     (title + summary). Full bill text chunking is a Phase 4+ concern.
 
-    @spec DATA-EMBED-002
+    @spec EMBED-CHUNK-001, EMBED-CHUNK-002
     """
     text_parts = [title]
     if summary:
@@ -134,24 +133,32 @@ def chunk_legislative_item(
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
     """
-    Generate embeddings for a batch of texts.
+    Generate 768-dimensional embeddings using Google Gemini text-embedding-004.
 
-    Uses the embedding model configured in environment (Gemini or MiniLM).
+    The database schema (pgvector vector(768)) and the RAG query layer both
+    require Gemini embeddings. Do not substitute a different model without
+    updating the DB schema and the TypeScript query-side embedding call.
 
-    @spec DATA-EMBED-003
+    @spec EMBED-GEN-001, EMBED-GEN-003
     """
     config = get_config()
 
-    if config.embedding_model == "gemini":
-        return _embed_gemini(texts, config.google_ai_api_key)
-    elif config.embedding_model == "minilm":
-        return _embed_minilm(texts)
-    else:
-        raise ValueError(f"Unknown embedding model: {config.embedding_model}")
+    if config.embedding_model != "gemini":
+        raise ValueError(
+            f"Unsupported embedding model: {config.embedding_model!r}. "
+            f"Only 'gemini' (text-embedding-004, 768-dim) is compatible with "
+            f"the vector(768) database schema. Set EMBEDDING_MODEL=gemini."
+        )
+
+    return _embed_gemini(texts, config.google_ai_api_key)
+
+
+# Embedding dimension expected by the DB schema and RAG query layer.
+EMBEDDING_DIM = 768
 
 
 def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
-    """Generate embeddings using Google's Gemini embedding API."""
+    """Generate embeddings using Google Gemini text-embedding-004 (768-dim)."""
     from google import genai
 
     client = genai.Client(api_key=api_key)
@@ -161,25 +168,17 @@ def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
         result = client.models.embed_content(
             model="text-embedding-004",
             contents=text,
+            config={"task_type": "RETRIEVAL_DOCUMENT"},
         )
-        embeddings.append(result.embeddings[0].values)
+        values = result.embeddings[0].values
+        if len(values) != EMBEDDING_DIM:
+            raise RuntimeError(
+                f"Expected {EMBEDDING_DIM}-dim embedding, got {len(values)}-dim. "
+                f"Check the Gemini embedding model configuration."
+            )
+        embeddings.append(values)
 
     return embeddings
-
-
-def _embed_minilm(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings using local all-MiniLM-L6-v2 model."""
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        raise ImportError(
-            "sentence-transformers required for MiniLM embeddings. "
-            "Install with: pip install sentence-transformers"
-        )
-
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    embeddings = model.encode(texts, show_progress_bar=True)
-    return [emb.tolist() for emb in embeddings]
 
 
 # ─── Pipeline Runner ────────────────────────────────────────────────────
@@ -192,7 +191,7 @@ def run_embedding_pipeline(source_type: str | None = None) -> None:
     Processes code_sections and legislative_items that don't yet have
     corresponding document_chunks.
 
-    @spec DATA-EMBED-001, DATA-EMBED-002
+    @spec EMBED-WRITE-001, EMBED-WRITE-002, EMBED-WRITE-003
     """
     db = get_supabase_client()
 
@@ -203,17 +202,42 @@ def run_embedding_pipeline(source_type: str | None = None) -> None:
         _embed_legislative_items(db)
 
 
+def _get_already_embedded_source_ids(db, source_type: str) -> set[str]:
+    """Return the set of source_ids that already have chunks in document_chunks."""
+    result = (
+        db.table("document_chunks")
+        .select("source_id")
+        .eq("source_type", source_type)
+        .execute()
+    )
+    return {row["source_id"] for row in (result.data or [])}
+
+
 def _embed_code_sections(db) -> None:
-    """Chunk and embed all code sections."""
+    """Chunk and embed code sections that haven't been embedded yet."""
+    already_embedded = _get_already_embedded_source_ids(db, "code_section")
+
     result = db.table("code_sections").select("*").execute()
 
     if not result.data:
         logger.info("No code sections to embed")
         return
 
-    logger.info(f"Processing {len(result.data)} code sections")
+    # Filter to only unembedded sections
+    pending = [s for s in result.data if s["id"] not in already_embedded]
 
-    for section in result.data:
+    if not pending:
+        logger.info(
+            f"All {len(result.data)} code sections already embedded, nothing to do"
+        )
+        return
+
+    logger.info(
+        f"Embedding {len(pending)} new code sections "
+        f"({len(result.data) - len(pending)} already embedded)"
+    )
+
+    for section in pending:
         chunks = chunk_code_section(
             section_id=section["id"],
             content=section["content"],
@@ -235,20 +259,33 @@ def _embed_code_sections(db) -> None:
             # pgvector expects a list, which JSON serializes correctly
             db.table("document_chunks").insert(row).execute()
 
-    logger.info(f"Embedded {len(result.data)} code sections")
+    logger.info(f"Embedded {len(pending)} code sections")
 
 
 def _embed_legislative_items(db) -> None:
-    """Chunk and embed all legislative items."""
+    """Chunk and embed legislative items that haven't been embedded yet."""
+    already_embedded = _get_already_embedded_source_ids(db, "legislative_item")
+
     result = db.table("legislative_items").select("*").execute()
 
     if not result.data:
         logger.info("No legislative items to embed")
         return
 
-    logger.info(f"Processing {len(result.data)} legislative items")
+    pending = [i for i in result.data if i["id"] not in already_embedded]
 
-    for item in result.data:
+    if not pending:
+        logger.info(
+            f"All {len(result.data)} legislative items already embedded, nothing to do"
+        )
+        return
+
+    logger.info(
+        f"Embedding {len(pending)} new legislative items "
+        f"({len(result.data) - len(pending)} already embedded)"
+    )
+
+    for item in pending:
         chunks = chunk_legislative_item(
             item_id=item["id"],
             title=item["title"],
@@ -266,7 +303,7 @@ def _embed_legislative_items(db) -> None:
             row.pop("id", None)
             db.table("document_chunks").insert(row).execute()
 
-    logger.info(f"Embedded {len(result.data)} legislative items")
+    logger.info(f"Embedded {len(pending)} legislative items")
 
 
 if __name__ == "__main__":
