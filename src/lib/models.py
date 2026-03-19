@@ -65,7 +65,7 @@ class LegislativeItem(BaseModel):
     Normalizes bills, ordinances, resolutions, executive orders, etc.
     into a common schema regardless of source.
 
-    @spec DATA-SILVER-001
+    @spec DATA-PIPE-001, DATA-PIPE-010
     """
 
     id: UUID = Field(default_factory=uuid4)
@@ -92,7 +92,7 @@ class CodeSection(BaseModel):
     Preserves the hierarchical structure of legal codes with
     parent_section_id for tree traversal.
 
-    @spec DATA-SILVER-002
+    @spec DATA-PIPE-020
     """
 
     id: UUID = Field(default_factory=uuid4)
@@ -113,8 +113,6 @@ class CodeSection(BaseModel):
 class MeetingRecord(BaseModel):
     """
     An agenda or minutes document from a government body meeting.
-
-    @spec DATA-SILVER-003
     """
 
     id: UUID = Field(default_factory=uuid4)
@@ -139,7 +137,7 @@ class DocumentChunk(BaseModel):
     Chunks are created by section-aware splitting (not naive token splitting)
     to preserve legal text semantics.
 
-    @spec DATA-GOLD-001
+    @spec EMBED-CHUNK-001
     """
 
     id: UUID = Field(default_factory=uuid4)
