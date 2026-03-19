@@ -4,7 +4,7 @@ Tier 3 data collection via PDF text extraction: meeting minutes, agendas, fiscal
 
 ## Status
 
-**MAPPED** - 2026-03-14. Sources identified in data audit; extraction pipeline not yet built.
+**DEFERRED** - 2026-03-19. pdf_extractor.py is a stub raising NotImplementedError. All specs are [D]. No action until Phase 8+ AgendaCenter work begins.
 
 ## References
 
@@ -39,7 +39,7 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+As of 2026-03-19: pdf_extractor.py is a stub that raises `NotImplementedError`. agenda_parser.py is not yet created. All 5 specs are [D] (deferred). No Bronze→Silver path exists for PDF content. Work blocked on CivicPlus AgendaCenter scraper (Phase 8+).
 
 ## Work Required
 

@@ -4,7 +4,7 @@ Section-aware document chunking, embedding generation, and pgvector storage for 
 
 ## Status
 
-**MAPPED** - 2026-03-14. Chunking strategy outlined in HLD D4; implementation not yet started.
+**IMPLEMENTED** - 2026-03-19. chunker.py, embedder.py, and vector_search.py are fully built and integrated into CI.
 
 ## References
 
@@ -42,21 +42,15 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+As of 2026-03-19:
+- **chunker.py** — section-aware chunker implemented; splits on legal section boundaries (not token count), preserves hierarchical breadcrumbs
+- **embedder.py** — embedding generation pipeline using Gemini embedding API; MiniLM (EMBED-GEN-002) intentionally deferred; embedder raises ValueError on unsupported model
+- **vector_search.py** — `match_document_chunks` RPC call with jurisdiction/type metadata filters
+- EMBED-EVAL-001/002 (retrieval quality evaluation) deferred to Phase 9
 
-## Work Required
+## Work Required (Post-MVP)
 
-### Must Fix
-1. Section-aware chunker for eCode360 HTML (chapter → section → subsection boundaries)
-2. Chunker for legislative text (bill articles, sections)
-3. Embedding generation pipeline (run during ingestion, not at query time)
-4. pgvector similarity search with metadata filtering (jurisdiction, source_type)
-
-### Should Fix
-1. Sub-chunking strategy for oversized sections (>2000 tokens) with overlap
-2. Hierarchical breadcrumb preservation ("Town Code > Ch. 165 > §165-23 > (b)(3)")
-3. Embedding model comparison (MiniLM vs. Gemini vs. legal-domain model)
-
-### Nice to Have
-1. Hybrid search (vector similarity + full-text keyword search via Postgres tsvector)
-2. Re-embedding triggered by Silver layer changes (not full re-index)
+### Phase 9
+1. Retrieval quality evaluation — 20-question test set, recall@8 metric
+2. Sub-chunking for oversized sections (>2000 tokens) with overlap
+3. Hybrid search (pgvector + tsvector keyword fallback)

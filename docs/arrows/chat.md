@@ -4,7 +4,7 @@ RAG-powered Q&A interface: query understanding, vector retrieval, model routing,
 
 ## Status
 
-**MAPPED** - 2026-03-14. Architecture defined in HLD; no implementation yet.
+**IMPLEMENTED** - 2026-03-19. route.ts, rag.ts, router.ts, citations.ts, and ChatInterface.tsx are fully built and deployed.
 
 ## References
 
@@ -47,23 +47,20 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+As of 2026-03-19:
+- **route.ts** — POST /api/chat with 2000-char input validation and streaming via AI SDK `streamText`; no rate limiting (open API cost exposure — Phase 9 priority)
+- **router.ts** — 8-type `QuestionType` classifier (`classifyQuestion()`, `routeQuery()`); simple → Gemini Flash, complex/multi-jurisdiction → Claude Sonnet
+- **rag.ts** — `buildPrompt()` constructs system prompt with retrieved chunks, jurisdiction context, and legal disclaimer injected on every response
+- **citations.ts** — source attribution maps retrieved chunks to source URLs
+- **Stats API** (`/api/stats`, `/stats` page) shipped without EARS specs — DASH-STATS-001 through 005 needed
+- CSP `connect-src` (next.config.js:26) does not include `generativelanguage.googleapis.com` or `api.anthropic.com` — currently safe (server-only calls), but fragile if any AI call moves client-side
+- No Jest test coverage for router.ts or rag.ts pure functions
 
-## Work Required
+## Work Required (Post-MVP)
 
-### Must Fix
-1. RAG pipeline: query → embed → retrieve top-k chunks → construct prompt → call model → return response
-2. Model routing heuristic (keyword/intent classification for tier selection)
-3. Citation linking (map retrieved chunks to source URLs)
-4. Legal disclaimer injection on every response
-5. Chat UI component with streaming response display
-
-### Should Fix
-1. Conversation context (multi-turn: "what about for commercial properties?" should carry forward "fence" context)
-2. "I don't know" handling — detect low retrieval confidence, admit uncertainty rather than hallucinate
-3. Jurisdiction disambiguation ("the county" vs. "the town" when both have relevant law)
-
-### Nice to Have
-1. Query suggestion / autocomplete based on common questions
-2. Feedback mechanism (thumbs up/down on responses for quality tracking)
-3. Response caching for repeated common questions
+### Phase 9
+1. Rate limiting on POST /api/chat — IP-based via Upstash ratelimit or Vercel Edge middleware
+2. DASH-STATS-001 through 005 EARS specs for Stats API
+3. Jest/Vitest unit tests for `classifyQuestion()`, `routeQuery()`, `buildPrompt()`
+4. Conversation context (multi-turn carry-forward)
+5. Low-confidence "I don't know" detection

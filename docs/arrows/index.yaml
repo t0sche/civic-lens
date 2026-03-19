@@ -40,13 +40,13 @@ arrows:
 
   ingestion-pdf:
     status: DEFERRED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: []
     blockedBy: [ingestion-scraping]
     detail: ingestion-pdf.md
     next: "Phase 9+: PDF extraction for meeting minutes once AgendaCenter scraping is in place"
-    drift: null
+    drift: "arrow detail doc updated to reflect DEFERRED status; pdf_extractor.py is a stub, all specs [D]"
 
   data-pipeline:
     status: PARTIALLY_IMPLEMENTED

@@ -23,6 +23,9 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self'",
+              // NOTE: generativelanguage.googleapis.com (Gemini) and api.anthropic.com (Claude)
+              // are intentionally excluded — all AI API calls are server-side only (API routes).
+              // If any AI call is ever moved client-side, add those hosts here.
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
               "frame-ancestors 'none'",
             ].join("; "),

@@ -144,7 +144,7 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
     """
     Normalize a municipal legislation entry to a LegislativeItem.
 
-    @spec DATA-PIPE-002
+    @spec DATA-PIPE-010, DATA-PIPE-011, DATA-PIPE-012
     """
     entry = json.loads(raw) if isinstance(raw, str) else raw
 
