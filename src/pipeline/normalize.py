@@ -17,6 +17,12 @@ import logging
 from datetime import date
 from typing import Callable
 
+from src.lib.config import (
+    get_county_config,
+    get_municipal_config,
+    get_scraper_config,
+    get_state_config,
+)
 from src.lib.models import (
     CodeSection,
     JurisdictionLevel,
@@ -24,7 +30,6 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
-from src.lib.config import get_state_config, get_county_config, get_municipal_config, get_scraper_config
 from src.lib.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
