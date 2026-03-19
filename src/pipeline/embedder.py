@@ -215,7 +215,7 @@ def _get_already_embedded_source_ids(db, source_type: str) -> set[str]:
 
 def _embed_code_sections(db) -> None:
     """Chunk and embed code sections that haven't been embedded yet."""
-    already_embedded = _get_already_embedded_source_ids(db, "code_section")
+    already_embedded = _get_already_embedded_source_ids(db, ChunkSourceType.CODE_SECTION)
 
     result = db.table("code_sections").select("*").execute()
 
@@ -264,7 +264,7 @@ def _embed_code_sections(db) -> None:
 
 def _embed_legislative_items(db) -> None:
     """Chunk and embed legislative items that haven't been embedded yet."""
-    already_embedded = _get_already_embedded_source_ids(db, "legislative_item")
+    already_embedded = _get_already_embedded_source_ids(db, ChunkSourceType.LEGISLATIVE_ITEM)
 
     result = db.table("legislative_items").select("*").execute()
 
