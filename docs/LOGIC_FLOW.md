@@ -1,7 +1,7 @@
 # CivicLens — Application Logic Flow
 
 > **Living document.** Update this whenever control flow, function signatures, or data paths change.
-> Last updated: 2026-03-16
+> Last updated: 2026-03-19
 
 ---
 
@@ -442,7 +442,7 @@ flowchart TB
 
         subgraph Lib["Libraries"]
             RAG["rag.ts<br/>embedQuery, retrieveContext, buildPrompt"]
-            ROUTER["router.ts<br/>routeQuery, callModel"]
+            ROUTER["router.ts<br/>classifyQuestion, routeQuery, getModel"]
             SB_CLIENT["supabase-client.ts<br/>createBrowserClient, createServerClient"]
         end
     end
@@ -516,31 +516,50 @@ function statusColor(status: string): string {
 }
 ```
 
-### 4.2 Chat — Client-Side Interaction
+### 4.2 Chat — Client-Side Streaming Interaction
 
 **File:** `src/app/chat/page.tsx`
 
-Client component manages conversation state and calls the API:
+Client component manages conversation state and streams responses from the API.
+Metadata (sources, tier, question type) is parsed from custom response headers.
+Text is streamed incrementally and rendered with a typing cursor.
 
 ```typescript
-// src/app/chat/page.tsx — handleSubmit()
+// src/app/chat/page.tsx — handleSubmit() (streaming)
 // @spec CHAT-UI-001, CHAT-UI-002
-const handleSubmit = async (query?: string) => {
+const handleSubmit = useCallback(async (query?: string) => {
   const text = query || input.trim();
   setMessages((prev) => [...prev, { role: "user", content: text }]);
   setLoading(true);
+  setStreamingContent("");
 
-  const res = await fetch("/api/chat", {
+  const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message: text }),
   });
-  const data = await res.json();
+
+  // Metadata from custom headers
+  const tier = response.headers.get("X-Tier");
+  const questionType = response.headers.get("X-Question-Type");
+  const sources = JSON.parse(response.headers.get("X-Sources") || "[]");
+
+  // Stream plain text response
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    fullText += decoder.decode(value, { stream: true });
+    setStreamingContent(fullText);
+  }
+
   setMessages((prev) => [...prev, {
-    role: "assistant", content: data.answer,
-    sources: data.sources, model: data.model, tier: data.tier,
+    role: "assistant", content: fullText,
+    sources, tier, questionType,
   }]);
-};
+}, [input, loading]);
 ```
 
 ---
@@ -667,6 +686,7 @@ sequenceDiagram
     participant API as api/chat/route.ts
     participant RAG as rag.ts
     participant Router as router.ts
+    participant AISDK as AI SDK (streamText)
     participant Gemini as Gemini API
     participant Supabase as Supabase RPC
     participant Claude as Claude API
@@ -680,31 +700,32 @@ sequenceDiagram
     Gemini-->>RAG: number[] (768-dim vector)
     RAG->>Supabase: match_document_chunks RPC<br/>(embedding, threshold=0.3, topK=8)
     Supabase-->>RAG: RetrievedChunk[] + similarity scores
-    RAG-->>API: RAGContext {chunks, uniqueDocCount, jurisdictions}
+    RAG-->>API: RAGContext {chunks, uniqueDocCount, jurisdictions, avgSimilarity}
 
-    Note over API: Step 2: Route Model
+    Note over API: Step 2: Classify & Route
     API->>Router: routeQuery(message, context)
-    Router-->>API: RoutingDecision {tier, model, reason}
+    Note over Router: classifyQuestion(message) → QuestionType<br/>Three-signal routing:<br/>1. Doc count 2. Jurisdictions 3. Question type
+    Router-->>API: RoutingDecision {tier, model, reason, questionType}
 
     Note over API: Step 3: Build Prompt
     API->>RAG: buildPrompt(message, context)
     RAG-->>API: {system, user} with source citations
 
-    Note over API: Step 4: Call LLM
+    Note over API: Step 4: Stream via AI SDK
+    API->>Router: getModel(routing)
+    Router-->>API: AI SDK model instance
+    API->>AISDK: streamText({model, system, messages})
     alt tier == "frontier"
-        API->>Router: callModel(system, user, routing)
-        Router->>Claude: POST /v1/messages<br/>claude-sonnet-4-20250514
-        Claude-->>Router: answer text
+        AISDK->>Claude: claude-sonnet-4-6
+        Claude-->>AISDK: streaming text
     else tier == "free"
-        API->>Router: callModel(system, user, routing)
-        Router->>Gemini: POST generateContent<br/>gemini-2.0-flash
-        Gemini-->>Router: answer text
+        AISDK->>Gemini: gemini-2.0-flash
+        Gemini-->>AISDK: streaming text
     end
-    Router-->>API: answer string
 
-    Note over API: Step 5: Format Response
-    API-->>ChatPage: {answer, sources[], model, tier, routingReason}
-    ChatPage-->>User: Render message + citations + tier badge
+    Note over API: Step 5: Stream Response
+    API-->>ChatPage: Text stream + metadata headers<br/>(X-Tier, X-Question-Type, X-Sources)
+    ChatPage-->>User: Render streaming text + citations + tier/type badges
 ```
 
 ### 6.1 Query Embedding
@@ -794,94 +815,110 @@ ${contextBlocks}`;
 
 ## 7. Model Routing Decision Tree
 
+### Question Type Classification
+
+**File:** `src/lib/router.ts` — `classifyQuestion()`
+
+Queries are first classified into one of 8 question types using pattern matching:
+
+| Type | Tier | Example |
+|------|------|---------|
+| `factual_lookup` | Free | "What is the fence height limit?" |
+| `definition` | Free | "What does 'setback' mean?" |
+| `status_check` | Free | "What is the status of HB 1234?" |
+| `procedural` | Free | "How do I apply for a building permit?" |
+| `comparison` | Frontier | "How do state and county noise rules differ?" |
+| `analysis` | Frontier | "How would HB 1234 affect Bel Air zoning?" |
+| `multi_jurisdiction` | Frontier | "What do all three levels of government say?" |
+| `synthesis` | Frontier | "Give me a comprehensive overview of regulations" |
+
+### Three-Signal Routing
+
 ```mermaid
 flowchart TD
-    START[Incoming Query + RAG Context] --> DOC_CHECK{uniqueDocCount >= threshold?<br/>default: 3}
-    DOC_CHECK -->|Yes| FRONTIER["FRONTIER<br/>claude-sonnet-4-20250514<br/>Reason: Multi-document synthesis"]
+    START[Incoming Query + RAG Context] --> CLASSIFY["classifyQuestion(query)<br/>→ QuestionType"]
+    CLASSIFY --> DOC_CHECK{uniqueDocCount >= threshold?<br/>default: 3}
+    DOC_CHECK -->|Yes| FRONTIER["FRONTIER<br/>claude-sonnet-4-6<br/>Reason: Multi-document synthesis"]
     DOC_CHECK -->|No| JURIS_CHECK{jurisdictions.length > 1?}
-    JURIS_CHECK -->|Yes| FRONTIER2["FRONTIER<br/>claude-sonnet-4-20250514<br/>Reason: Cross-jurisdiction analysis"]
-    JURIS_CHECK -->|No| PATTERN_CHECK{Query matches<br/>complexity regex?}
-    PATTERN_CHECK -->|"state and county"<br/>"how would...affect"<br/>"compare"<br/>"if...then what"| FRONTIER3["FRONTIER<br/>claude-sonnet-4-20250514<br/>Reason: Complex reasoning"]
-    PATTERN_CHECK -->|No match| FREE["FREE<br/>gemini-2.0-flash<br/>Reason: Simple single-jurisdiction query"]
+    JURIS_CHECK -->|Yes| FRONTIER2["FRONTIER<br/>claude-sonnet-4-6<br/>Reason: Cross-jurisdiction analysis"]
+    JURIS_CHECK -->|No| TYPE_CHECK{Question type is<br/>complex?}
+    TYPE_CHECK -->|Yes| CONFIDENCE{avgSimilarity >= 0.7<br/>AND single source<br/>AND single jurisdiction?}
+    CONFIDENCE -->|Yes| FREE_OVERRIDE["FREE<br/>gemini-2.0-flash<br/>Reason: High-confidence single-source<br/>(confidence override)"]
+    CONFIDENCE -->|No| FRONTIER3["FRONTIER<br/>claude-sonnet-4-6<br/>Reason: Complex question type"]
+    TYPE_CHECK -->|No| FREE["FREE<br/>gemini-2.0-flash<br/>Reason: Simple question type"]
 ```
 
-**File:** `src/lib/router.ts`
+The confidence override is the key cost optimization: when RAG returns highly relevant results from a single source, even complex-sounding queries can be answered by the free model since the context is strong enough — the model just needs to summarize, not reason across documents.
 
 ```typescript
-// src/lib/router.ts — routeQuery()
+// src/lib/router.ts — routeQuery() with three-signal routing
 // @spec CHAT-ROUTE-001
 export function routeQuery(query: string, context: RAGContext): RoutingDecision {
-  const threshold = parseInt(process.env.MODEL_ROUTING_DOC_THRESHOLD || "3");
+  const docThreshold = parseInt(process.env.MODEL_ROUTING_DOC_THRESHOLD ?? "3");
+  const questionType = classifyQuestion(query);
+  const isComplexType = !SIMPLE_TYPES.includes(questionType);
 
-  if (context.uniqueDocCount >= threshold) {
-    return { tier: "frontier", model: "claude-sonnet-4-20250514",
-             reason: "Multi-document synthesis needed" };
+  // Signal 1: doc count
+  if (context.uniqueDocCount >= docThreshold) {
+    return { tier: "frontier", model: "claude-sonnet-4-6", reason: "...", questionType };
   }
+  // Signal 2: multi-jurisdiction
   if (context.jurisdictions.length > 1) {
-    return { tier: "frontier", model: "claude-sonnet-4-20250514",
-             reason: "Cross-jurisdiction analysis" };
+    return { tier: "frontier", model: "claude-sonnet-4-6", reason: "...", questionType };
   }
-
-  const complexPatterns = [
-    /state and (county|local|municipal)/i,
-    /how would.*affect/i, /what are the consequences/i,
-    /compare/i, /difference between/i,
-    /if.*then what/i, /under what circumstances/i,
-  ];
-  if (complexPatterns.some((p) => p.test(query))) {
-    return { tier: "frontier", model: "claude-sonnet-4-20250514",
-             reason: "Complex reasoning pattern detected" };
-  }
-
-  return { tier: "free", model: "gemini-2.0-flash",
-           reason: "Simple query with single-jurisdiction context" };
-}
-```
-
-### LLM Call Implementations
-
-**File:** `src/lib/router.ts`
-
-```typescript
-// src/lib/router.ts — callClaude()
-// @spec CHAT-ROUTE-002
-async function callClaude(system: string, user: string, model: string) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model, max_tokens: 2048, system,
-      messages: [{ role: "user", content: user }],
-    }),
-  });
-  const data = await res.json();
-  return data.content.filter((b: any) => b.type === "text")
-    .map((b: any) => b.text).join("");
-}
-```
-
-```typescript
-// src/lib/router.ts — callGemini()
-async function callGemini(system: string, user: string) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: 2048 },
-      }),
+  // Signal 3: question type + confidence override
+  if (isComplexType) {
+    if (context.avgSimilarity >= 0.7 && context.uniqueDocCount <= 1 && context.jurisdictions.length <= 1) {
+      return { tier: "free", model: "gemini-2.0-flash", reason: "...", questionType };
     }
-  );
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("") || "...";
+    return { tier: "frontier", model: "claude-sonnet-4-6", reason: "...", questionType };
+  }
+  return { tier: "free", model: "gemini-2.0-flash", reason: "...", questionType };
 }
+```
+
+### AI SDK Model Resolution
+
+**File:** `src/lib/router.ts` — `getModel()`
+
+Model calls now use the Vercel AI SDK instead of raw HTTP fetch calls:
+
+```typescript
+// src/lib/router.ts — getModel()
+// @spec CHAT-MODEL-001, CHAT-MODEL-002
+import { google } from "@ai-sdk/google";
+import { anthropic } from "@ai-sdk/anthropic";
+
+export function getModel(routing: RoutingDecision) {
+  if (routing.tier === "frontier") {
+    return anthropic("claude-sonnet-4-6");
+  }
+  return google("gemini-2.0-flash");
+}
+```
+
+The route handler streams the response using `streamText()`:
+
+```typescript
+// src/app/api/chat/route.ts — streaming with AI SDK
+import { streamText } from "ai";
+import { getModel } from "@/lib/router";
+
+const result = streamText({
+  model: getModel(routing),
+  system,
+  messages: [{ role: "user", content: user }],
+  maxOutputTokens: 2048,
+});
+
+return result.toTextStreamResponse({
+  headers: {
+    "X-Model": routing.model,
+    "X-Tier": routing.tier,
+    "X-Question-Type": routing.questionType,
+    "X-Sources": JSON.stringify(sources),
+  },
+});
 ```
 
 ---
