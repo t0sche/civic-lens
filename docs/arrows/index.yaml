@@ -86,7 +86,7 @@ arrows:
     blockedBy: [data-pipeline]
     detail: dashboard.md
     next: "Phase 9: Freshness indicators per source"
-    drift: "Arrow detail doc references non-existent component files (JurisdictionFilter.tsx etc.) — functionality is implemented monolithically in src/app/page.tsx"
+    drift: "Arrow detail doc references non-existent files src/api/dashboard/route.ts and tests/api/test_dashboard_queries.py — doc should be updated to remove or correct these paths"
 
 unmapped:
   # Nothing unmapped — all domains identified in HLD are tracked above.
