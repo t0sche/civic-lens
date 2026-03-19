@@ -30,7 +30,8 @@ from src.lib.supabase import (
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://v3.openstates.org"
-MARYLAND_JURISDICTION = get_state_config()["openstates_jurisdiction"]
+OPENSTATES_JURISDICTION = get_state_config()["openstates_jurisdiction"]
+MARYLAND_JURISDICTION = OPENSTATES_JURISDICTION  # backwards-compatible alias
 
 
 class OpenStatesClient:
