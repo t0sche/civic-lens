@@ -40,15 +40,18 @@ export default async function StatsPage() {
   const jurisdictions = getJurisdictionNames();
 
   // Latest ingestion run per source
-  const { data: dataSources } = await db
+  const { data: allRuns } = await db
     .from("ingestion_runs")
-    .select(
-      "id, source, started_at, completed_at, status, records_fetched, records_new, records_updated, error_message",
-      { distinct: "source" }
-    )
+    .select("*")
     .order("started_at", { ascending: false });
 
-  const dataSourcesTyped = (dataSources || []) as IngestionRun[];
+  const latestBySource: Record<string, IngestionRun> = {};
+  for (const run of (allRuns || []) as IngestionRun[]) {
+    if (!latestBySource[run.source]) {
+      latestBySource[run.source] = run;
+    }
+  }
+  const dataSources = Object.values(latestBySource);
 
   // Record counts
   const [bronze, legislative, codeSections, chunks] = await Promise.all([
