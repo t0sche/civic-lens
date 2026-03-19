@@ -166,7 +166,7 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
     """
     Normalize a Harford County Council bill to a LegislativeItem.
 
-    @spec DATA-PIPE-004
+    @spec DATA-PIPE-030, DATA-PIPE-031
     """
     bill = json.loads(raw) if isinstance(raw, str) else raw
 
@@ -212,7 +212,7 @@ def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> Code
     """
     Normalize an eCode360 section to a CodeSection.
 
-    @spec DATA-PIPE-003
+    @spec DATA-PIPE-020, DATA-PIPE-021, DATA-PIPE-022, DATA-PIPE-023
     """
     municipality_code = metadata.get("municipality_code", "")
 

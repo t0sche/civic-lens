@@ -55,7 +55,7 @@ class OpenStatesClient:
         for attempt in range(max_retries + 1):
             response = self.session.get(url, params=params or {})
             if response.status_code == 429:
-                wait = 7 * (attempt + 1)
+                wait = 5 * (2 ** attempt)  # @spec INGEST-API-006: 5s exponential backoff
                 logger.warning(
                     "Rate limited (429). Waiting %ds before retry %d/%d",
                     wait, attempt + 1, max_retries

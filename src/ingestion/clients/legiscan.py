@@ -15,7 +15,7 @@ Compliance with LegiScan API terms:
   - dataset_hash comparison to skip unchanged session datasets
   - Status code ("OK" / "ERROR") checked on every response
 
-@spec INGEST-API-003, INGEST-API-004
+@spec INGEST-API-010, INGEST-API-011, INGEST-API-012, INGEST-API-013
 """
 
 from __future__ import annotations
@@ -369,7 +369,7 @@ def ingest_legiscan_bills(session_id: int | None = None) -> None:
 
     If session_id is not provided, uses the most recent session.
 
-    @spec INGEST-API-003
+    @spec INGEST-API-010, INGEST-API-011, INGEST-API-012, INGEST-API-013
     """
     client = LegiScanClient()
     db = get_supabase_client()

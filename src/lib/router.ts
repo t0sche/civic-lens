@@ -97,7 +97,7 @@ export function routeQuery(
 /**
  * Call the appropriate model API based on the routing decision.
  *
- * @spec CHAT-ROUTE-002
+ * @spec CHAT-MODEL-001, CHAT-MODEL-002
  */
 export async function callModel(
   systemPrompt: string,

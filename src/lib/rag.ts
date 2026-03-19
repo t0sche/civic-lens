@@ -125,7 +125,7 @@ export async function retrieveContext(
 /**
  * Build the system prompt with retrieved context for the LLM.
  *
- * @spec CHAT-RAG-003
+ * @spec CHAT-RAG-004
  */
 export function buildPrompt(
   userQuery: string,

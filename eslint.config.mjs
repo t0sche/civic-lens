@@ -1,11 +1,10 @@
 // @ts-check
-const nextConfig = require("eslint-config-next");
+import nextConfig from "eslint-config-next";
 
-module.exports = [
+export default [
   ...nextConfig,
   {
     rules: {
-      // Ensure no-explicit-any is enforced
       "@typescript-eslint/no-explicit-any": "error",
     },
   },

@@ -8,7 +8,7 @@ with their status (Pending, Approved, Tabled, Expired, Rejected).
 This is the simplest scraping target — a single HTML table with
 links to PDF documents in the CivicPlus DocumentCenter.
 
-@spec INGEST-SCRAPE-003
+@spec INGEST-SCRAPE-010, INGEST-SCRAPE-011, INGEST-SCRAPE-012, INGEST-SCRAPE-013, INGEST-SCRAPE-014, INGEST-SCRAPE-015
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def ingest_belair_legislation() -> None:
     """
     Main entry point: scrape Bel Air legislation and write to Bronze layer.
 
-    @spec INGEST-SCRAPE-003
+    @spec INGEST-SCRAPE-010, INGEST-SCRAPE-011, INGEST-SCRAPE-012, INGEST-SCRAPE-013, INGEST-SCRAPE-014, INGEST-SCRAPE-015
     """
     db = get_supabase_client()
     run_id = start_ingestion_run(db, "belair_legislation")
