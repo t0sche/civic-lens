@@ -401,6 +401,16 @@ fi
 
 # Commit and push
 git add -A
+# GITHUB_TOKEN lacks 'workflows' permission — unstage any workflow file changes
+# to avoid a rejected push. Workflow files can be updated manually if needed.
+git restore --staged .github/workflows/ 2>/dev/null || true
+# If nothing remains staged after excluding workflows, bail out
+if git diff --cached --quiet; then
+  echo "No changes remain staged after excluding .github/workflows/. Nothing to commit."
+  git checkout -
+  git branch -D "$BRANCH_NAME"
+  exit 0
+fi
 git commit -m "chore(gardener): intent audit fixes — ${DATE_STAMP}
 
 Automated maintenance by the CivicLens Gardener agent:
