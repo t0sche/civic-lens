@@ -49,6 +49,12 @@ def upsert_bronze_document(
       - "new"      — first time this (source, source_id) was seen
       - "updated"  — existing record updated with new content
     """
+    # @spec INGEST-API-040, INGEST-API-041
+    if not raw_content.strip():
+        raise ValueError("raw_content must not be empty")
+    if not source_id.strip():
+        raise ValueError("source_id must not be empty")
+
     new_hash = content_hash(raw_content)
 
     # Check for an existing record with the same natural key

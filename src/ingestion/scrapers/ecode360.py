@@ -2,8 +2,7 @@
 eCode360 HTML scraper for municipal and county codes.
 
 Extracts the hierarchical structure of codified law from General Code's
-eCode360 platform. Both the Town of Bel Air (BE2811) and Harford County
-(HA0904) codes are hosted here.
+eCode360 platform. Municipality codes are configured in civic-lens.config.json.
 
 The scraper preserves section hierarchy (chapter → article → section)
 and generates section_path breadcrumbs for RAG retrieval context.
@@ -27,13 +26,16 @@ from src.lib.supabase import (
     start_ingestion_run,
     upsert_bronze_document,
 )
+from src.lib.config import get_scraper_config
 
 logger = logging.getLogger(__name__)
 
 # eCode360 municipality codes
 ECODE360_BASE = "https://ecode360.com"
-BEL_AIR_CODE = "BE2811"       # Town of Bel Air
-HARFORD_COUNTY_CODE = "HA0904"  # Harford County
+_muni_ecode = get_scraper_config("municipal", "ecode360")
+_county_ecode = get_scraper_config("county", "ecode360")
+BEL_AIR_CODE = _muni_ecode["code"] if _muni_ecode else None
+HARFORD_COUNTY_CODE = _county_ecode["code"] if _county_ecode else None
 
 # Polite crawling: 1 second between requests
 REQUEST_DELAY = 1.0
@@ -158,10 +160,12 @@ class ECode360Scraper:
 
 def determine_source_name(municipality_code: str) -> str:
     """Map municipality code to a human-readable source name."""
-    return {
-        BEL_AIR_CODE: "ecode360_belair",
-        HARFORD_COUNTY_CODE: "ecode360_harford",
-    }.get(municipality_code, f"ecode360_{municipality_code.lower()}")
+    names = {}
+    if BEL_AIR_CODE:
+        names[BEL_AIR_CODE] = "ecode360_belair"
+    if HARFORD_COUNTY_CODE:
+        names[HARFORD_COUNTY_CODE] = "ecode360_harford"
+    return names.get(municipality_code, f"ecode360_{municipality_code.lower()}")
 
 
 def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
@@ -233,11 +237,15 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Scrape an eCode360 municipal code")
+    available_codes = [c for c in [BEL_AIR_CODE, HARFORD_COUNTY_CODE] if c]
     parser.add_argument(
         "--municipality",
-        default=BEL_AIR_CODE,
-        choices=[BEL_AIR_CODE, HARFORD_COUNTY_CODE],
-        help=f"Municipality code to scrape (default: {BEL_AIR_CODE} = Bel Air)",
+        default=available_codes[0] if available_codes else None,
+        choices=available_codes or None,
+        help=f"Municipality code to scrape (default: {available_codes[0] if available_codes else 'none configured'})",
     )
     args = parser.parse_args()
-    ingest_municipal_code(args.municipality)
+    if args.municipality:
+        ingest_municipal_code(args.municipality)
+    else:
+        logger.error("No municipality codes configured in civic-lens.config.json")

@@ -4,7 +4,7 @@ Tests for embedding model validation.
 Verifies that only the Gemini embedding model (768-dim, matching the
 pgvector schema) is accepted, and that incompatible models are rejected.
 
-@spec DATA-EMBED-003
+@spec EMBED-GEN-003
 """
 
 

@@ -24,6 +24,7 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
+from src.lib.config import get_state_config, get_county_config, get_municipal_config, get_scraper_config
 from src.lib.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ BELAIR_STATUS_MAP: dict[str, LegislativeStatus] = {
     "UNKNOWN": LegislativeStatus.UNKNOWN,
 }
 
-# Maps Harford County status strings (from the ASP.NET bills tracker) to
+# Maps county council status strings (from the ASP.NET bills tracker) to
 # the unified LegislativeStatus enum.
 HARFORD_STATUS_MAP: dict[str, LegislativeStatus] = {
     "Introduced": LegislativeStatus.INTRODUCED,
@@ -120,7 +121,7 @@ def normalize_openstates_bill(bronze_id: str, raw: dict) -> LegislativeItem:
         bronze_id=bronze_id,
         source_id=bill.get("identifier", ""),
         jurisdiction=JurisdictionLevel.STATE,
-        body="Maryland General Assembly",
+        body=get_state_config()["body"],
         item_type=item_type,
         title=bill.get("title", "Untitled"),
         summary=summary,
@@ -135,7 +136,7 @@ def normalize_openstates_bill(bronze_id: str, raw: dict) -> LegislativeItem:
 
 def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
     """
-    Normalize a Bel Air legislation entry to a LegislativeItem.
+    Normalize a municipal legislation entry to a LegislativeItem.
 
     @spec DATA-PIPE-002
     """
@@ -154,7 +155,7 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
         bronze_id=bronze_id,
         source_id=entry.get("number", ""),
         jurisdiction=JurisdictionLevel.MUNICIPAL,
-        body="Town of Bel Air Board of Commissioners",
+        body=(get_municipal_config() or {}).get("body", "Municipal Government"),
         item_type=item_type,
         title=entry.get("title", "Untitled"),
         status=status,
@@ -164,7 +165,7 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
 
 def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
     """
-    Normalize a Harford County Council bill to a LegislativeItem.
+    Normalize a county council bill to a LegislativeItem.
 
     @spec DATA-PIPE-030, DATA-PIPE-031
     """
@@ -182,7 +183,7 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
         else:
             status = LegislativeStatus.UNKNOWN
 
-    # Harford County uses ordinances and resolutions as primary types
+    # County bills may be ordinances or resolutions
     title = bill.get("title", "Untitled")
     title_lower = title.lower()
     if "resolution" in title_lower:
@@ -196,7 +197,7 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
         bronze_id=bronze_id,
         source_id=bill.get("bill_number", ""),
         jurisdiction=JurisdictionLevel.COUNTY,
-        body="Harford County Council",
+        body=(get_county_config() or {}).get("body", "County Government"),
         item_type=item_type,
         title=title,
         status=status,
@@ -216,12 +217,19 @@ def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> Code
     """
     municipality_code = metadata.get("municipality_code", "")
 
-    if municipality_code == "BE2811":
+    _muni_cfg = get_scraper_config("municipal", "ecode360")
+    _cty_cfg = get_scraper_config("county", "ecode360")
+    _muni_code = _muni_cfg["code"] if _muni_cfg else None
+    _cty_code = _cty_cfg["code"] if _cty_cfg else None
+
+    if _muni_code and municipality_code == _muni_code:
         jurisdiction = JurisdictionLevel.MUNICIPAL
-        code_source = "Town of Bel Air Code"
-    elif municipality_code == "HA0904":
+        muni = get_municipal_config()
+        code_source = f"{muni['name']} Code" if muni else f"Code {municipality_code}"
+    elif _cty_code and municipality_code == _cty_code:
         jurisdiction = JurisdictionLevel.COUNTY
-        code_source = "Harford County Code"
+        cty = get_county_config()
+        code_source = f"{cty['name']} Code" if cty else f"Code {municipality_code}"
     else:
         jurisdiction = JurisdictionLevel.MUNICIPAL
         code_source = f"Code {municipality_code}"

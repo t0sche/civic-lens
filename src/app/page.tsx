@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import config from "../../civic-lens.config.json";
 
 // Server-side Supabase client for SSR data fetching
 function getSupabase() {
@@ -98,8 +99,7 @@ export default async function DashboardPage({
       <div className="mb-8">
         <h1 className="text-2xl font-bold">Legislative Tracker</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Active and proposed legislation affecting Bel Air, MD (21015) across
-          state, county, and municipal governments.
+          {`Active and proposed legislation affecting ${config.display.subtitle} (${config.zip}) across state, county, and municipal governments.`}
         </p>
       </div>
 

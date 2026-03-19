@@ -12,6 +12,7 @@
  */
 
 import { createServerClient } from "./supabase-client";
+import { getLocality, buildLocalityDescription } from "./locality";
 
 export interface RetrievedChunk {
   id: string;
@@ -28,6 +29,8 @@ export interface RAGContext {
   chunks: RetrievedChunk[];
   uniqueDocCount: number;
   jurisdictions: string[];
+  /** Average similarity score across retrieved chunks (0-1). Used for routing confidence. */
+  avgSimilarity: number;
 }
 
 /**
@@ -87,7 +90,7 @@ export async function retrieveContext(
 
   if (error) {
     console.error("Vector search failed:", error);
-    return { chunks: [], uniqueDocCount: 0, jurisdictions: [] };
+    return { chunks: [], uniqueDocCount: 0, jurisdictions: [], avgSimilarity: 0 };
   }
 
   type RpcRow = {
@@ -114,11 +117,16 @@ export async function retrieveContext(
   // Compute context metadata for model routing
   const uniqueDocIds = new Set(chunks.map((c) => c.source_id));
   const jurisdictions = Array.from(new Set(chunks.map((c) => c.jurisdiction)));
+  const avgSimilarity =
+    chunks.length > 0
+      ? chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length
+      : 0;
 
   return {
     chunks,
     uniqueDocCount: uniqueDocIds.size,
     jurisdictions,
+    avgSimilarity,
   };
 }
 
@@ -139,7 +147,10 @@ ${chunk.chunk_text}`;
     })
     .join("\n\n---\n\n");
 
-  const system = `You are CivicLens, a civic transparency assistant for Bel Air, Maryland (ZIP 21015). You help residents understand the laws, ordinances, and regulations that affect them across three levels of government: Maryland State, Harford County, and the Town of Bel Air.
+  const loc = getLocality();
+  const jurisdictionDesc = buildLocalityDescription();
+
+  const system = `You are CivicLens, a civic transparency assistant for ${loc.locality.name} (ZIP ${loc.zip}). You help residents understand the laws, ordinances, and regulations that affect them across ${jurisdictionDesc}.
 
 RULES:
 1. Answer based ONLY on the provided source documents. If the sources don't contain the answer, say so clearly.

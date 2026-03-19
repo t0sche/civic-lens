@@ -1,7 +1,7 @@
 """
 Tests for section-aware document chunking.
 
-@spec DATA-EMBED-001, DATA-EMBED-002
+@spec EMBED-CHUNK-001, EMBED-CHUNK-002
 """
 
 
