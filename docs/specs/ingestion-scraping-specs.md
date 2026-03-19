@@ -36,5 +36,5 @@
 
 ## Harford County Bills Tracker (Phase 4)
 
-- [D] **INGEST-SCRAPE-040**: The system shall scrape the Harford County custom bills application at apps.harfordcountymd.gov/Legislation/Bills, handling ASP.NET session state and ViewState.
-- [D] **INGEST-SCRAPE-041**: For each county bill, the system shall extract: bill number, title, status, sponsors, and key dates.
+- [ ] **INGEST-SCRAPE-040**: The system shall scrape the Harford County custom bills application at apps.harfordcountymd.gov/Legislation/Bills, handling ASP.NET session state and ViewState.
+- [ ] **INGEST-SCRAPE-041**: For each county bill, the system shall extract: bill number, title, status, sponsors, and key dates.

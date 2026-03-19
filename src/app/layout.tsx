@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,19 +19,19 @@ export default function RootLayout({
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
         <header className="border-b border-gray-200 bg-white">
           <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-            <a href="/" className="text-xl font-semibold tracking-tight">
+            <Link href="/" className="text-xl font-semibold tracking-tight">
               CivicLens
-            </a>
+            </Link>
             <div className="flex gap-6 text-sm">
-              <a href="/" className="hover:text-blue-600">
+              <Link href="/" className="hover:text-blue-600">
                 Dashboard
-              </a>
-              <a href="/chat" className="hover:text-blue-600">
+              </Link>
+              <Link href="/chat" className="hover:text-blue-600">
                 Ask a Question
-              </a>
-              <a href="/about" className="hover:text-blue-600">
+              </Link>
+              <Link href="/about" className="hover:text-blue-600">
                 About
-              </a>
+              </Link>
             </div>
           </nav>
         </header>

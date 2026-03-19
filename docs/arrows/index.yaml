@@ -10,13 +10,13 @@ last_updated: 2026-03-19
 arrows:
   infrastructure:
     status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [ingestion-apis, ingestion-scraping]
     blockedBy: []
     detail: infrastructure.md
-    next: "Phase 9 hardening: freshness indicators, cost monitoring"
-    drift: null
+    next: "Phase 9 hardening: freshness indicators, cost monitoring; add RLS policies"
+    drift: "RLS policies absent (INFRA-SEC-001/002); config.py raises bare KeyError on missing env vars (INFRA-ENV-003)"
 
   ingestion-apis:
     status: PARTIALLY_IMPLEMENTED
@@ -35,8 +35,8 @@ arrows:
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
-    next: "Phase 9+: civicplus_agenda.py (headless browser); belair User-Agent contact URL"
-    drift: "civicplus_agenda.py is a stub (Phase 9+); harford_bills.py is fully implemented (335 lines)"
+    next: "Phase 9+: civicplus_agenda.py (headless browser); ecode360.py missing User-Agent header"
+    drift: "civicplus_agenda.py is a stub (Phase 9+); ecode360.py missing CivicLens User-Agent (INGEST-SCRAPE-006); INGEST-SCRAPE-040/041 spec status corrected from [D] to [ ]"
 
   ingestion-pdf:
     status: DEFERRED
@@ -59,14 +59,14 @@ arrows:
     drift: "normalize_harford_bills is registered in NORMALIZERS; validate.py and enrich.py not yet created"
 
   embeddings:
-    status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [chat]
     blockedBy: [data-pipeline]
     detail: embeddings.md
     next: "Phase 9: Retrieval quality evaluation (20-question test set, recall@8)"
-    drift: null
+    drift: "EMBED-GEN-002 (MiniLM local model) is deferred — raises ValueError rather than using sentence-transformers"
 
   chat:
     status: IMPLEMENTED
