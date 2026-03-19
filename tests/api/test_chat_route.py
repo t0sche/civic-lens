@@ -97,7 +97,7 @@ class TestChatResponseShape:
         assert "routingReason" in resp
 
     def test_tier_values_are_valid(self):
-        """Tier field is one of 'free' or 'frontier' (CHAT-ROUTE-001)."""
+        """Tier field is one of 'free' or 'frontier' (CHAT-API-001)."""
         for tier in ("free", "frontier"):
             resp = self._make_response("answer", [], "model", tier, "reason")
             assert resp["tier"] in ("free", "frontier")
