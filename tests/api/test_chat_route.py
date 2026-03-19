@@ -1,7 +1,8 @@
 """
 Tests for the POST /api/chat route contract.
 
-These are unit tests for the request validation and response shape logic.
+These are unit tests for the request validation, response shape,
+question-type classification, and model routing logic.
 Integration tests (hitting real Supabase + LLM APIs) run separately.
 
 @spec CHAT-API-001, CHAT-API-002, CHAT-API-003, CHAT-API-004, CHAT-API-005
@@ -119,40 +120,210 @@ class TestChatResponseShape:
         assert 0.0 <= source["similarity"] <= 1.0
 
 
+class TestQuestionTypeClassification:
+    """
+    Verify question-type classification logic from CHAT-ROUTE-003.
+
+    Mirrors classifyQuestion() in src/lib/router.ts.
+    """
+
+    # Question type classification patterns (mirroring router.ts)
+    DEFINITION_PATTERNS = [
+        re.compile(r"what\s+(does|is)\s+(a|an|the)?\s*[\"']?\w+[\"']?\s+(mean|refer\s+to|stand\s+for)", re.I),
+        re.compile(r"define\s+", re.I),
+        re.compile(r"definition\s+of", re.I),
+        re.compile(r"what\s+is\s+(a|an|the)\s+\w+\??$", re.I),
+    ]
+
+    STATUS_PATTERNS = [
+        re.compile(r"status\s+of", re.I),
+        re.compile(r"what\s+happened\s+(to|with)", re.I),
+        re.compile(r"has\s+.+\s+(passed|been\s+(signed|vetoed|introduced|approved))", re.I),
+        re.compile(r"is\s+.+\s+still\s+(active|pending|in\s+committee)", re.I),
+    ]
+
+    PROCEDURAL_PATTERNS = [
+        re.compile(r"how\s+(do|can|should)\s+I\s+(apply|file|submit|request|get|obtain|register)", re.I),
+        re.compile(r"what\s+(is|are)\s+the\s+(process|steps|procedure|requirements?)\s+(for|to)", re.I),
+    ]
+
+    COMPARISON_PATTERNS = [
+        re.compile(r"compare|comparison|difference\s+between", re.I),
+        re.compile(r"state\s+(and|vs\.?|versus)\s+(county|town|municipal)", re.I),
+        re.compile(r"how\s+(does|do)\s+.+\s+differ", re.I),
+    ]
+
+    ANALYSIS_PATTERNS = [
+        re.compile(r"how\s+(would|does|will|could|might)\s+.+\s+affect", re.I),
+        re.compile(r"what\s+(is|are)\s+the\s+(impact|effect|consequence)", re.I),
+        re.compile(r"if\s+.+\s+then\s+what", re.I),
+    ]
+
+    MULTI_JURISDICTION_PATTERNS = [
+        re.compile(r"all\s+(three|3)\s+(levels?|jurisdictions?|governments?)", re.I),
+        re.compile(r"which\s+(government|jurisdiction|level)", re.I),
+        re.compile(r"across\s+(all|every|multiple)\s+(levels?|jurisdictions?)", re.I),
+    ]
+
+    SYNTHESIS_PATTERNS = [
+        re.compile(r"what\s+are\s+all\s+the", re.I),
+        re.compile(r"comprehensive|exhaustive|complete\s+(list|overview|summary)", re.I),
+        re.compile(r"everything\s+(about|regarding|related\s+to)", re.I),
+    ]
+
+    SIMPLE_TYPES = {"factual_lookup", "definition", "status_check", "procedural"}
+
+    def _classify(self, query: str) -> str:
+        """Mirror of classifyQuestion() in src/lib/router.ts."""
+        # Complex types first
+        for pattern in self.MULTI_JURISDICTION_PATTERNS:
+            if pattern.search(query):
+                return "multi_jurisdiction"
+        for pattern in self.COMPARISON_PATTERNS:
+            if pattern.search(query):
+                return "comparison"
+        for pattern in self.ANALYSIS_PATTERNS:
+            if pattern.search(query):
+                return "analysis"
+        for pattern in self.SYNTHESIS_PATTERNS:
+            if pattern.search(query):
+                return "synthesis"
+        # Simple types
+        for pattern in self.DEFINITION_PATTERNS:
+            if pattern.search(query):
+                return "definition"
+        for pattern in self.STATUS_PATTERNS:
+            if pattern.search(query):
+                return "status_check"
+        for pattern in self.PROCEDURAL_PATTERNS:
+            if pattern.search(query):
+                return "procedural"
+        return "factual_lookup"
+
+    def test_definition_query_classified(self):
+        """Definition questions are classified correctly."""
+        assert self._classify("What is a setback?") == "definition"
+        assert self._classify("Define easement") == "definition"
+
+    def test_status_query_classified(self):
+        """Status questions are classified correctly."""
+        assert self._classify("What is the status of HB 1234?") == "status_check"
+        assert self._classify("Has HB 1234 been signed?") == "status_check"
+
+    def test_procedural_query_classified(self):
+        """Procedural questions are classified correctly."""
+        assert self._classify("How do I apply for a building permit?") == "procedural"
+
+    def test_comparison_query_classified(self):
+        """Comparison questions are classified correctly."""
+        assert self._classify("How do state and county noise rules differ?") == "comparison"
+        assert self._classify("Compare fence regulations") == "comparison"
+
+    def test_analysis_query_classified(self):
+        """Analysis questions are classified correctly."""
+        assert self._classify("How would HB 1234 affect local zoning?") == "analysis"
+        assert self._classify("What are the consequences of this bill?") == "analysis"
+
+    def test_multi_jurisdiction_query_classified(self):
+        """Multi-jurisdiction questions are classified correctly."""
+        assert self._classify("What do all three levels of government say?") == "multi_jurisdiction"
+        assert self._classify("Which jurisdiction handles this?") == "multi_jurisdiction"
+
+    def test_synthesis_query_classified(self):
+        """Synthesis questions are classified correctly."""
+        assert self._classify("What are all the fence regulations?") == "synthesis"
+        assert self._classify("Give me a comprehensive overview") == "synthesis"
+
+    def test_simple_factual_query_defaults(self):
+        """Simple factual queries default to factual_lookup."""
+        assert self._classify("What is the fence height limit?") == "factual_lookup"
+        assert self._classify("What are the noise ordinance hours?") == "factual_lookup"
+
+    def test_simple_types_are_correct(self):
+        """Simple types match the expected set."""
+        assert self.SIMPLE_TYPES == {"factual_lookup", "definition", "status_check", "procedural"}
+
+
 class TestModelRouting:
     """
     Verify model routing rules from CHAT-ROUTE-001 through CHAT-ROUTE-005.
 
-    These tests mirror the logic in src/lib/router.ts.
+    These tests mirror the three-signal routing logic in src/lib/router.ts.
     """
 
-    def _route(self, query: str, unique_doc_count: int, jurisdictions: list[str]) -> dict:
-        """Mirror of routeQuery() in src/lib/router.ts."""
-        COMPLEXITY_SIGNALS = [
-            re.compile(r"state\s+(and|vs\.?|versus)\s+(county|town|municipal)", re.I),
-            re.compile(r"all\s+(three|3)\s+(levels?|jurisdictions?|governments?)", re.I),
-            re.compile(r"how\s+(would|does|will|could|might)\s+.+\s+affect", re.I),
-            re.compile(r"what\s+(is|are)\s+the\s+(impact|effect|consequence)", re.I),
-            re.compile(r"compare|comparison|difference\s+between", re.I),
-        ]
+    SIMPLE_TYPES = {"factual_lookup", "definition", "status_check", "procedural"}
 
+    # Simplified classification for routing tests
+    COMPARISON_PATTERNS = [
+        re.compile(r"compare|comparison|difference\s+between", re.I),
+        re.compile(r"state\s+(and|vs\.?|versus)\s+(county|town|municipal)", re.I),
+    ]
+    ANALYSIS_PATTERNS = [
+        re.compile(r"how\s+(would|does|will|could|might)\s+.+\s+affect", re.I),
+    ]
+
+    def _classify(self, query: str) -> str:
+        """Simplified classifier for routing tests."""
+        for p in self.COMPARISON_PATTERNS:
+            if p.search(query):
+                return "comparison"
+        for p in self.ANALYSIS_PATTERNS:
+            if p.search(query):
+                return "analysis"
+        return "factual_lookup"
+
+    def _route(
+        self,
+        query: str,
+        unique_doc_count: int,
+        jurisdictions: list[str],
+        avg_similarity: float = 0.5,
+    ) -> dict:
+        """Mirror of routeQuery() in src/lib/router.ts with three-signal routing."""
         doc_threshold = 3
+        question_type = self._classify(query)
+        is_complex = question_type not in self.SIMPLE_TYPES
 
+        # Signal 1: doc count
         if unique_doc_count >= doc_threshold:
-            return {"tier": "frontier", "model": "claude-sonnet-4-6",
-                    "reason": f"spans {unique_doc_count} documents"}
+            return {
+                "tier": "frontier",
+                "model": "claude-sonnet-4-6",
+                "reason": f"spans {unique_doc_count} documents",
+                "questionType": question_type,
+            }
 
+        # Signal 2: multi-jurisdiction
         if len(jurisdictions) > 1:
-            return {"tier": "frontier", "model": "claude-sonnet-4-6",
-                    "reason": "multi-jurisdiction"}
+            return {
+                "tier": "frontier",
+                "model": "claude-sonnet-4-6",
+                "reason": "multi-jurisdiction",
+                "questionType": question_type,
+            }
 
-        for pattern in COMPLEXITY_SIGNALS:
-            if pattern.search(query):
-                return {"tier": "frontier", "model": "claude-sonnet-4-6",
-                        "reason": "complexity pattern"}
+        # Signal 3: complex question type with confidence override
+        if is_complex:
+            if avg_similarity >= 0.7 and unique_doc_count <= 1 and len(jurisdictions) <= 1:
+                return {
+                    "tier": "free",
+                    "model": "gemini-2.0-flash",
+                    "reason": "complex type but high-confidence single-source",
+                    "questionType": question_type,
+                }
+            return {
+                "tier": "frontier",
+                "model": "claude-sonnet-4-6",
+                "reason": "complex question type",
+                "questionType": question_type,
+            }
 
-        return {"tier": "free", "model": "gemini-2.0-flash",
-                "reason": "simple query"}
+        return {
+            "tier": "free",
+            "model": "gemini-2.0-flash",
+            "reason": "simple query",
+            "questionType": question_type,
+        }
 
     def test_many_documents_routes_to_frontier(self):
         """Queries spanning 3+ documents route to the frontier model (CHAT-ROUTE-001)."""
@@ -164,14 +335,15 @@ class TestModelRouting:
         decision = self._route("test", unique_doc_count=1, jurisdictions=["STATE", "MUNICIPAL"])
         assert decision["tier"] == "frontier"
 
-    def test_complexity_pattern_routes_to_frontier(self):
-        """Impact analysis queries route to frontier model (CHAT-ROUTE-003)."""
+    def test_complex_question_type_routes_to_frontier(self):
+        """Complex question types route to frontier model (CHAT-ROUTE-003)."""
         decision = self._route(
             "How does this state law affect town regulations?",
             unique_doc_count=1,
             jurisdictions=["STATE"],
         )
         assert decision["tier"] == "frontier"
+        assert decision["questionType"] == "analysis"
 
     def test_simple_query_routes_to_free(self):
         """Simple single-jurisdiction queries route to free model (CHAT-ROUTE-004)."""
@@ -182,8 +354,41 @@ class TestModelRouting:
         )
         assert decision["tier"] == "free"
         assert decision["model"] == "gemini-2.0-flash"
+        assert decision["questionType"] == "factual_lookup"
 
     def test_frontier_model_is_current_claude_sonnet(self):
         """Frontier model is claude-sonnet-4-6 (current Sonnet)."""
         decision = self._route("test", unique_doc_count=5, jurisdictions=["STATE"])
         assert decision["model"] == "claude-sonnet-4-6"
+
+    def test_high_confidence_overrides_complex_type(self):
+        """High-confidence single-source retrieval keeps complex queries on free tier."""
+        decision = self._route(
+            "Compare fence regulations",
+            unique_doc_count=1,
+            jurisdictions=["MUNICIPAL"],
+            avg_similarity=0.85,
+        )
+        assert decision["tier"] == "free"
+        assert decision["questionType"] == "comparison"
+
+    def test_low_confidence_complex_type_routes_to_frontier(self):
+        """Low-confidence complex queries still route to frontier."""
+        decision = self._route(
+            "Compare fence regulations",
+            unique_doc_count=1,
+            jurisdictions=["MUNICIPAL"],
+            avg_similarity=0.4,
+        )
+        assert decision["tier"] == "frontier"
+        assert decision["questionType"] == "comparison"
+
+    def test_doc_count_overrides_confidence(self):
+        """Document count signal takes priority over confidence override."""
+        decision = self._route(
+            "What is the fence height?",
+            unique_doc_count=4,
+            jurisdictions=["MUNICIPAL"],
+            avg_similarity=0.9,
+        )
+        assert decision["tier"] == "frontier"
