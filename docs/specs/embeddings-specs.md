@@ -23,7 +23,7 @@
 - [ ] **EMBED-GEN-001**: When EMBEDDING_MODEL is set to "gemini", the system shall generate embeddings using the Gemini text-embedding-004 model with task_type "retrieval_document".
 - [D] **EMBED-GEN-002**: When EMBEDDING_MODEL is set to "minilm", the system shall generate embeddings using the local all-MiniLM-L6-v2 model via sentence-transformers.
 - [ ] **EMBED-GEN-003**: If EMBEDDING_MODEL is set to an unrecognized value, then the system shall raise a ValueError identifying the invalid model name.
-- [ ] **EMBED-GEN-004**: The system shall store generated embeddings in the document_chunks table's embedding column as vector(768) for Gemini or vector(384) for MiniLM.
+- [ ] **EMBED-GEN-004**: The system shall store generated embeddings in the document_chunks table's embedding column as vector(768) when using the Gemini model.
 
 ## Gold Layer Writing
 
