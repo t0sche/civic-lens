@@ -4,7 +4,7 @@ Tier 2 data collection via HTML scraping and RSS monitoring: eCode360, CivicPlus
 
 ## Status
 
-**MAPPED** - 2026-03-14. Data audit identified all targets and assessed scrapeability; scrapers not yet built.
+**PARTIALLY_IMPLEMENTED** - 2026-03-19. ecode360.py, belair_legislation.py, and harford_bills.py are all implemented and running in CI. civicplus_agenda.py is deferred to Phase 8+. Test coverage exists only for harford_bills (test_harford_bills.py); test_ecode360.py, test_civicplus.py, and test_belair_legislation.py do not yet exist.
 
 ## References
 
@@ -45,7 +45,11 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- ecode360.py scrapes both BE2811 (Bel Air) and HA0904 (Harford County) hierarchically with configurable depth. Both run on the daily CI schedule.
+- belair_legislation.py parses the belairmd.org/213/Legislation HTML table, maps status strings to the unified enum, and resolves PDF URLs.
+- harford_bills.py scrapes the ASP.NET bills tracker at apps.harfordcountymd.gov with prefix-match status fallback.
+- civicplus_agenda.py is a stub (Phase 8+) — correctly absent from CI and marked DEFERRED in specs.
+- **MEDIUM**: test_ecode360.py, test_civicplus.py, and test_belair_legislation.py are listed in References but do not exist. Only test_harford_bills.py was created.
 
 ## Work Required
 

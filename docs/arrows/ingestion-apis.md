@@ -4,7 +4,7 @@ Tier 1 data collection from structured APIs: Open States, LegiScan, ArcGIS Hub, 
 
 ## Status
 
-**MAPPED** - 2026-03-14. Data audit complete; API endpoints identified; clients not yet built.
+**IMPLEMENTED** - 2026-03-19. openstates.py and legiscan.py are both fully implemented with pagination, error handling, change_hash dedup, and Bronze layer writes. All 21 active INGEST-API specs verified implemented. legiscan.py is not yet scheduled in CI (workflow_dispatch only). arcgis.py and youtube.py are not yet built (NICE-TO-HAVE).
 
 ## References
 
@@ -24,8 +24,8 @@ Tier 1 data collection from structured APIs: Open States, LegiScan, ArcGIS Hub, 
 ### Code
 - src/ingestion/clients/openstates.py
 - src/ingestion/clients/legiscan.py
-- src/ingestion/clients/arcgis.py
-- src/ingestion/clients/youtube.py
+- src/ingestion/clients/arcgis.py — **NOT YET BUILT** (NICE-TO-HAVE)
+- src/ingestion/clients/youtube.py — **NOT YET BUILT** (NICE-TO-HAVE)
 
 ## Architecture
 
@@ -43,7 +43,11 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- openstates.py implements pagination, session/bill fetching, 5xx error handling, and Bronze upsert with change_hash dedup. Runs on the 6-hour CI schedule.
+- legiscan.py implements getSessionList, getMasterList, getBill, ERROR/5xx handling, and change_hash dedup. Fully implemented but not yet scheduled in CI (workflow_dispatch only).
+- **MEDIUM**: test_legiscan.py listed in References but does not exist — legiscan.py has no automated test coverage.
+- **MEDIUM**: legiscan is commented out of the NORMALIZERS dict in normalize.py (TODO Phase 9) — Bronze data accumulates but Silver normalization does not run.
+- arcgis.py and youtube.py are NICE-TO-HAVE items not yet built — removed from active Code references above.
 
 ## Work Required
 
