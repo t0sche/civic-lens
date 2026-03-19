@@ -137,9 +137,10 @@ async function callClaude(
   }
 
   const data = await response.json();
-  return data.content
-    .filter((block: any) => block.type === "text")
-    .map((block: any) => block.text)
+  type ContentBlock = { type: string; text?: string };
+  return (data.content as ContentBlock[])
+    .filter((block) => block.type === "text")
+    .map((block) => block.text ?? "")
     .join("\n");
 }
 
@@ -164,9 +165,10 @@ async function callGemini(system: string, user: string): Promise<string> {
   }
 
   const data = await response.json();
+  type GeminiPart = { text?: string };
   return (
-    data.candidates?.[0]?.content?.parts
-      ?.map((p: any) => p.text)
+    (data.candidates?.[0]?.content?.parts as GeminiPart[] | undefined)
+      ?.map((p) => p.text ?? "")
       .join("\n") ?? "I was unable to generate a response."
   );
 }

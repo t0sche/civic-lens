@@ -15,8 +15,6 @@ bounded by section numbers.
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any
 
 from src.lib.config import get_config
 from src.lib.models import ChunkSourceType, DocumentChunk, JurisdictionLevel

@@ -90,7 +90,17 @@ export async function retrieveContext(
     return { chunks: [], uniqueDocCount: 0, jurisdictions: [] };
   }
 
-  const chunks: RetrievedChunk[] = (data || []).map((row: any) => ({
+  type RpcRow = {
+    id: string;
+    chunk_text: string;
+    section_path: string | null;
+    jurisdiction: string;
+    source_type: string;
+    source_id: string;
+    similarity: number;
+    metadata: Record<string, unknown> | null;
+  };
+  const chunks: RetrievedChunk[] = (data || []).map((row: RpcRow) => ({
     id: row.id,
     chunk_text: row.chunk_text,
     section_path: row.section_path,

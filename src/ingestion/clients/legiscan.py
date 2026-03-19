@@ -31,10 +31,10 @@ import requests
 
 from src.lib.config import get_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -280,7 +280,7 @@ class LegiScanClient:
     def get_dataset(self, dataset_id: int) -> dict:
         """Get a dataset archive (Base64 encoded ZIP)."""
         # Check dataset_hash before downloading
-        stored_hashes = self._get_stored_hashes("dataset")
+        _stored_hashes = self._get_stored_hashes("dataset")
         cache_path = self._cache_path("getDataset", id=dataset_id)
         cached = self._read_cache(cache_path)
         if cached is not None:

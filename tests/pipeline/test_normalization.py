@@ -6,18 +6,16 @@ Tests for the Bronze → Silver normalization pipeline.
 
 import json
 
-import pytest
-
-from src.pipeline.normalize import (
-    normalize_openstates_bill,
-    normalize_belair_legislation,
-    normalize_ecode360_section,
-    normalize_harford_bills,
-)
 from src.lib.models import (
     JurisdictionLevel,
     LegislativeStatus,
     LegislativeType,
+)
+from src.pipeline.normalize import (
+    normalize_belair_legislation,
+    normalize_ecode360_section,
+    normalize_harford_bills,
+    normalize_openstates_bill,
 )
 
 
@@ -66,8 +64,10 @@ class TestNormalizeOpenStatesBill:
     def test_status_from_action_classification(self):
         """Status is derived from the most recent action's classification."""
         bill = self._make_bill(actions=[
-            {"date": "2026-01-15", "description": "Introduced", "classification": ["introduction"]},
-            {"date": "2026-02-01", "description": "Signed by Governor", "classification": ["signed"]},
+            {"date": "2026-01-15", "description": "Introduced",
+             "classification": ["introduction"]},
+            {"date": "2026-02-01", "description": "Signed by Governor",
+             "classification": ["signed"]},
         ])
         item = normalize_openstates_bill("bronze-123", json.dumps(bill))
         assert item.status == LegislativeStatus.ENACTED
@@ -102,7 +102,8 @@ class TestNormalizeOpenStatesBill:
     def test_unknown_status_default(self):
         """Bills with no recognized action classification default to UNKNOWN."""
         bill = self._make_bill(actions=[
-            {"date": "2026-01-15", "description": "Something unusual", "classification": ["unusual-action"]},
+            {"date": "2026-01-15", "description": "Something unusual",
+             "classification": ["unusual-action"]},
         ])
         item = normalize_openstates_bill("bronze-123", json.dumps(bill))
         assert item.status == LegislativeStatus.UNKNOWN
@@ -162,7 +163,11 @@ class TestNormalizeEcode360Section:
         assert section.chapter == "Chapter 165 - Development Regulations"
         assert section.section == "§165-23 Fences and walls"
         assert "six feet" in section.content
-        assert section.section_path == "Town of Bel Air Code > Chapter 165 - Development Regulations > §165-23 Fences and walls"
+        expected_path = (
+            "Town of Bel Air Code > Chapter 165 - Development Regulations"
+            " > §165-23 Fences and walls"
+        )
+        assert section.section_path == expected_path
 
     def test_harford_section(self):
         """Harford County code sections have correct jurisdiction."""

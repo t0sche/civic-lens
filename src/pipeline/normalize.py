@@ -15,12 +15,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import Any, Callable
+from typing import Callable
 
 from src.lib.models import (
-    LegislativeItem,
     CodeSection,
     JurisdictionLevel,
+    LegislativeItem,
     LegislativeStatus,
     LegislativeType,
 )

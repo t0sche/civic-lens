@@ -5,11 +5,9 @@ Verifies that upsert_bronze_document skips writes for unchanged content
 and correctly reports new/updated/skipped status.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
-
-from src.lib.supabase import upsert_bronze_document, content_hash
+from src.lib.supabase import content_hash, upsert_bronze_document
 
 
 def _mock_supabase(existing_rows=None):
