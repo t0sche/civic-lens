@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FIX_MODE="${1:-}"
 DATE_STAMP="$(date -u +'%Y-%m-%d')"
-BRANCH_NAME="gardener/intent-audit-${DATE_STAMP}"
+BRANCH_NAME="gardener-intent-audit-${DATE_STAMP}"
 REPORT_FILE="${REPO_ROOT}/.gardener-report.json"
 CONTEXT_FILE="${REPO_ROOT}/.gardener-context.md"
 
@@ -280,7 +280,7 @@ echo "Gardener: Running intent audit..."
 AUDIT_PROMPT="$(cat "$AUDIT_PROMPT_FILE")"
 claude -p "$AUDIT_PROMPT" \
   --output-format text \
-  --max-turns 30 \
+  --max-turns 50 \
   --allowedTools "Read,Glob,Grep,Write,Bash(cat:*),Bash(wc:*),Bash(find:*)" \
   2>&1
 
@@ -330,14 +330,20 @@ if [ "$DRIFT_COUNT" != "0" ]; then
   echo "Intent drift detected in $DRIFT_COUNT arrows."
 fi
 
-# Create branch
+# Create branch (append short hash if name already exists)
+if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null || \
+   git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+  SHORT_HASH="$(git rev-parse --short HEAD)"
+  BRANCH_NAME="${BRANCH_NAME}-${SHORT_HASH}"
+  echo "Branch name collision — using $BRANCH_NAME"
+fi
 git checkout -b "$BRANCH_NAME"
 
 # Run the fix agent
 FIX_PROMPT="$(cat "$FIX_PROMPT_FILE")"
 claude -p "$FIX_PROMPT" \
   --output-format text \
-  --max-turns 30 \
+  --max-turns 50 \
   --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
   2>&1
 
