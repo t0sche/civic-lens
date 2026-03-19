@@ -1,5 +1,5 @@
 schema_version: 1
-last_updated: 2026-03-17
+last_updated: 2026-03-19
 # Phases 1-7 implemented and deployed as of 2026-03-17. Phase 8 starting.
 
 # Arrow of Intent Index — CivicLens
@@ -9,34 +9,34 @@ last_updated: 2026-03-17
 
 arrows:
   infrastructure:
-    status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [ingestion-apis, ingestion-scraping]
     blockedBy: []
     detail: infrastructure.md
     next: "Phase 9 hardening: freshness indicators, cost monitoring"
-    drift: null
+    drift: "RLS policies absent from migrations (INFRA-SEC-001/002/003 unimplemented); config raises bare KeyError on missing env vars (INFRA-ENV-003)"
 
   ingestion-apis:
-    status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
     next: "Phase 9: LegiScan integration as supplementary source"
-    drift: null
+    drift: "INGEST-API-040/041 (reject empty content/source_id) not implemented in upsert_bronze_document(); INGEST-API-007 (5xx retry with 10s delay) missing — raise_for_status() fires immediately"
 
   ingestion-scraping:
     status: IN_PROGRESS
     sampled: 2026-03-19
-    audited: 2026-03-17
+    audited: 2026-03-19
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
     next: "Phase 8: run ecode360 with HA0904; civicplus_agenda.py deferred to Phase 8+"
-    drift: "civicplus_agenda.py is deferred (Phase 8+); harford_bills.py is fully implemented"
+    drift: "civicplus_agenda.py is deferred (Phase 8+); harford_bills.py is fully implemented; INGEST-SCRAPE-040/041 spec updated from [D] to [x]"
 
   ingestion-pdf:
     status: DEFERRED
@@ -51,7 +51,7 @@ arrows:
   data-pipeline:
     status: IN_PROGRESS
     sampled: 2026-03-19
-    audited: 2026-03-17
+    audited: 2026-03-19
     blocks: [embeddings, dashboard]
     blockedBy: [ingestion-apis]
     detail: data-pipeline.md
@@ -59,34 +59,34 @@ arrows:
     drift: "src/pipeline/validate.py missing — DATA-PIPE-040/041/042 (Silver layer validation) not yet implemented"
 
   embeddings:
-    status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [chat]
     blockedBy: [data-pipeline]
     detail: embeddings.md
     next: "Phase 9: Retrieval quality evaluation (20-question test set, recall@8)"
-    drift: null
+    drift: "EMBED-GEN-002 (MiniLM) intentionally deferred — embedder raises ValueError; EMBED-GEN-001 task_type 'retrieval_document' not passed explicitly to Gemini embed_content()"
 
   chat:
-    status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
     next: "Phase 9: Cost monitoring; streaming for Vercel timeout mitigation"
-    drift: null
+    drift: "TypeScript RAG pipeline (rag.ts, router.ts, route.ts) has no pytest coverage — gap is expected for TS/Python split architecture"
 
   dashboard:
     status: IMPLEMENTED
-    sampled: 2026-03-14
-    audited: 2026-03-17
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: []
     blockedBy: [data-pipeline]
     detail: dashboard.md
     next: "Phase 9: Freshness indicators per source"
-    drift: null
+    drift: "Arrow detail doc references non-existent files src/api/dashboard/route.ts and tests/api/test_dashboard_queries.py — doc should be updated to remove or correct these paths"
 
 unmapped:
   # Nothing unmapped — all domains identified in HLD are tracked above.

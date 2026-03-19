@@ -43,7 +43,8 @@ def chunk_code_section(
     Short sections (< MAX_CHUNK_CHARS) become a single chunk.
     Long sections are sub-chunked at paragraph boundaries with overlap.
 
-    @spec EMBED-CHUNK-001, EMBED-CHUNK-002, EMBED-CHUNK-003, EMBED-CHUNK-004, EMBED-CHUNK-005, EMBED-CHUNK-006
+    @spec EMBED-CHUNK-001, EMBED-CHUNK-002, EMBED-CHUNK-003,
+          EMBED-CHUNK-004, EMBED-CHUNK-005, EMBED-CHUNK-006
     """
     if len(content) <= MAX_CHUNK_CHARS:
         return [DocumentChunk(

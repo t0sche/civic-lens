@@ -7,6 +7,7 @@ Integration tests (hitting real Supabase + LLM APIs) run separately.
 @spec CHAT-API-001, CHAT-API-002, CHAT-API-003, CHAT-API-004, CHAT-API-005
 """
 
+import re
 
 
 class TestChatRequestValidation:
@@ -127,8 +128,6 @@ class TestModelRouting:
 
     def _route(self, query: str, unique_doc_count: int, jurisdictions: list[str]) -> dict:
         """Mirror of routeQuery() in src/lib/router.ts."""
-        import re
-
         COMPLEXITY_SIGNALS = [
             re.compile(r"state\s+(and|vs\.?|versus)\s+(county|town|municipal)", re.I),
             re.compile(r"all\s+(three|3)\s+(levels?|jurisdictions?|governments?)", re.I),
