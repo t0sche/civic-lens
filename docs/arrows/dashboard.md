@@ -4,7 +4,7 @@ Legislative tracker dashboard: filterable views of active/proposed legislation a
 
 ## Status
 
-**MAPPED** - 2026-03-14. Requirements defined in HLD G2; UI not yet designed or built.
+**IMPLEMENTED** - 2026-03-19. Dashboard is live in src/app/page.tsx with filtering, legislative cards, and jurisdiction views. Component decomposition from the original plan was not done — functionality is monolithic.
 
 ## References
 
@@ -21,11 +21,8 @@ Legislative tracker dashboard: filterable views of active/proposed legislation a
 - tests/api/test_dashboard_queries.py
 
 ### Code
-- src/components/LegislativeTracker.tsx — main dashboard component
-- src/components/FilterBar.tsx — jurisdiction/status/type/date filters
-- src/components/LegislativeCard.tsx — individual item display
-- src/components/MeetingCalendar.tsx — upcoming meetings view
-- src/api/dashboard/route.ts — API routes for dashboard data
+- src/app/page.tsx — dashboard implemented monolithically (filtering, cards, layout all in one file)
+- src/api/dashboard/route.ts — API route for dashboard data
 
 ## Architecture
 
@@ -44,7 +41,9 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- Dashboard is fully implemented in `src/app/page.tsx` as a monolith rather than the planned component decomposition (LegislativeTracker.tsx, FilterBar.tsx, etc. were never created).
+- Filtering by jurisdiction, status, type, and date range is functional.
+- Meeting calendar and recent changes feed are not yet implemented (deferred to Phase 9).
 
 ## Work Required
 

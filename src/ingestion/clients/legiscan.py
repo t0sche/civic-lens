@@ -279,8 +279,7 @@ class LegiScanClient:
 
     def get_dataset(self, dataset_id: int) -> dict:
         """Get a dataset archive (Base64 encoded ZIP)."""
-        # Check dataset_hash before downloading
-        _stored_hashes = self._get_stored_hashes("dataset")
+        # Check local cache before downloading (use check_dataset_changed for hash comparison)
         cache_path = self._cache_path("getDataset", id=dataset_id)
         cached = self._read_cache(cache_path)
         if cached is not None:
