@@ -3,14 +3,17 @@
  *
  * POST /api/chat
  * Body: { message: string, jurisdiction?: string }
- * Response: { answer: string, sources: Source[], model: string, tier: string }
+ *
+ * Returns a streaming text response with custom headers for metadata.
+ * Non-streaming fallback: JSON response with { answer, sources, model, tier, routingReason, questionType }
  *
  * @spec CHAT-API-001
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { streamText } from "ai";
 import { retrieveContext, buildPrompt, type RetrievedChunk } from "@/lib/rag";
-import { routeQuery, callModel } from "@/lib/router";
+import { routeQuery, getModel } from "@/lib/router";
 
 interface ChatRequest {
   message: string;
@@ -24,14 +27,6 @@ interface Source {
   source_type: string;
   similarity: number;
   data_source?: string;
-}
-
-interface ChatResponse {
-  answer: string;
-  sources: Source[];
-  model: string;
-  tier: string;
-  routingReason: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -57,39 +52,48 @@ export async function POST(request: NextRequest) {
       jurisdiction: body.jurisdiction,
     });
 
-    // Step 2: Route to appropriate model
+    // Step 2: Route to appropriate model based on question type + retrieval signals
     const routing = routeQuery(body.message, context);
 
     // Step 3: Build prompt with context
     const { system, user } = buildPrompt(body.message, context);
 
-    // Step 4: Call the model
-    const answer = await callModel(system, user, routing);
+    // Step 4: Format sources
+    const sources: Source[] = context.chunks.map(
+      (chunk: RetrievedChunk, i: number) => ({
+        index: i + 1,
+        section_path: chunk.section_path,
+        jurisdiction: chunk.jurisdiction,
+        source_type: chunk.source_type,
+        similarity: Math.round(chunk.similarity * 100) / 100,
+        data_source: (chunk.metadata?.source as string) || undefined,
+      })
+    );
 
-    // Step 5: Format sources for the response
-    const sources: Source[] = context.chunks.map((chunk, i) => ({
-      index: i + 1,
-      section_path: chunk.section_path,
-      jurisdiction: chunk.jurisdiction,
-      source_type: chunk.source_type,
-      similarity: Math.round(chunk.similarity * 100) / 100,
-      data_source: (chunk.metadata?.source as string) || undefined,
-    }));
+    // Step 5: Stream the response using AI SDK
+    const result = streamText({
+      model: getModel(routing),
+      system,
+      messages: [{ role: "user", content: user }],
+      maxOutputTokens: 2048,
+    });
 
-    const response: ChatResponse = {
-      answer,
-      sources,
-      model: routing.model,
-      tier: routing.tier,
-      routingReason: routing.reason,
-    };
-
-    return NextResponse.json(response);
+    // Return a streaming response with metadata in custom headers
+    return result.toTextStreamResponse({
+      headers: {
+        "X-Model": routing.model,
+        "X-Tier": routing.tier,
+        "X-Question-Type": routing.questionType,
+        "X-Routing-Reason": routing.reason,
+        "X-Sources": JSON.stringify(sources),
+      },
+    });
   } catch (error) {
     console.error("Chat API error:", error);
     return NextResponse.json(
       {
-        error: "An error occurred while processing your question. Please try again.",
+        error:
+          "An error occurred while processing your question. Please try again.",
         detail: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
