@@ -1,12 +1,10 @@
 """
 CivicPlus AgendaCenter scraper — stub for Phase 4.
 
-Scrapes meeting agendas and minutes from CivicPlus-powered sites:
-- Harford County: harfordcountymd.gov/AgendaCenter (60+ boards)
-- Town of Bel Air: belairmd.org/AgendaCenter (12 boards)
-
-Both use identical CivicPlus AgendaCenter modules, so one scraper
-serves both with different base URLs.
+Scrapes meeting agendas and minutes from CivicPlus-powered sites.
+Uses identical CivicPlus AgendaCenter modules, so one scraper
+serves multiple jurisdictions with different base URLs configured
+in civic-lens.config.json.
 
 NOTE: AgendaCenter uses JavaScript for year selection dropdown,
 requiring a headless browser (Playwright) for full historical access.

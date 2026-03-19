@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
+import config from "../../../civic-lens.config.json";
 import { useState, useRef, useEffect, useCallback } from "react";
 
 /**
@@ -165,8 +167,8 @@ export default function ChatPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Ask About Local Law</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Ask plain-language questions about laws, ordinances, and regulations
-          affecting Bel Air, MD across state, county, and municipal government.
+          Ask plain-language questions about laws, ordinances, and regulations{" "}
+          {`affecting ${config.display.subtitle} across state, county, and municipal government.`}
         </p>
       </div>
 

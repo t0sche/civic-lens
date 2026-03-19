@@ -1,9 +1,9 @@
 """
-Bel Air legislation page scraper.
+Municipal legislation page scraper.
 
-Parses the Town of Bel Air's legislation tracking page at
-belairmd.org/213/Legislation to extract ordinances and resolutions
-with their status (Pending, Approved, Tabled, Expired, Rejected).
+Parses the configured municipal legislation tracking page to extract
+ordinances and resolutions with their status (Pending, Approved, Tabled,
+Expired, Rejected).
 
 This is the simplest scraping target — a single HTML table with
 links to PDF documents in the CivicPlus DocumentCenter.
@@ -27,17 +27,20 @@ from src.lib.supabase import (
     start_ingestion_run,
     upsert_bronze_document,
 )
+from src.lib.config import get_municipal_config
 
 logger = logging.getLogger(__name__)
 
-LEGISLATION_URL = "https://www.belairmd.org/213/Legislation"
-BASE_URL = "https://www.belairmd.org"
+_municipal = get_municipal_config()
+_scraper_cfg = _municipal["scrapers"].get("belair_legislation", {}) if _municipal else {}
+LEGISLATION_URL = _scraper_cfg.get("url", "")
+BASE_URL = _municipal["website"] if _municipal else ""
 REQUEST_DELAY = 1.0
 
 
 @dataclass
 class LegislationEntry:
-    """A single ordinance or resolution from the Bel Air legislation page."""
+    """A single ordinance or resolution from the municipal legislation page."""
     number: str           # e.g., "Ordinance 743" or "Resolution 2024-01"
     title: str
     status: str           # "Pending", "Approved", "Tabled", "Expired", "Rejected"
@@ -49,7 +52,7 @@ class LegislationEntry:
 
 def scrape_legislation_page() -> list[LegislationEntry]:
     """
-    Scrape the Bel Air legislation tracking page.
+    Scrape the municipal legislation tracking page.
 
     Returns a list of LegislationEntry objects.
     The page structure is a simple HTML list/table with links to PDFs.
@@ -125,11 +128,14 @@ def scrape_legislation_page() -> list[LegislationEntry]:
 
 def ingest_belair_legislation() -> None:
     """
-    Main entry point: scrape Bel Air legislation and write to Bronze layer.
+    Main entry point: scrape municipal legislation and write to Bronze layer.
 
     @spec INGEST-SCRAPE-010, INGEST-SCRAPE-011, INGEST-SCRAPE-012,
           INGEST-SCRAPE-013, INGEST-SCRAPE-014, INGEST-SCRAPE-015
     """
+    if not LEGISLATION_URL:
+        logger.info("Municipal legislation scraper not configured — skipping")
+        return
     db = get_supabase_client()
     run_id = start_ingestion_run(db, "belair_legislation")
 
@@ -169,12 +175,12 @@ def ingest_belair_legislation() -> None:
             records_updated=updated,
         )
         logger.info(
-            f"Bel Air legislation ingestion complete: {fetched} fetched, "
+            f"Municipal legislation ingestion complete: {fetched} fetched, "
             f"{new} new, {updated} updated"
         )
 
     except Exception as e:
-        logger.error(f"Bel Air legislation ingestion failed: {e}")
+        logger.error(f"Municipal legislation ingestion failed: {e}")
         complete_ingestion_run(db, run_id, error_message=str(e))
         raise
 

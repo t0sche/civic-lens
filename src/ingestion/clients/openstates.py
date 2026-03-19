@@ -1,5 +1,5 @@
 """
-Open States API v3 client for Maryland state legislative data.
+Open States API v3 client for state legislative data.
 
 Fetches bills, votes, sponsors, and committee data from the Open States
 GraphQL/REST API and writes to the Bronze layer.
@@ -19,6 +19,7 @@ from typing import Any, Generator
 import requests
 
 from src.lib.config import get_config
+from src.lib.config import get_state_config
 from src.lib.supabase import (
     complete_ingestion_run,
     get_supabase_client,
@@ -29,7 +30,8 @@ from src.lib.supabase import (
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://v3.openstates.org"
-MARYLAND_JURISDICTION = "ocd-jurisdiction/country:us/state:md/government"
+OPENSTATES_JURISDICTION = get_state_config()["openstates_jurisdiction"]
+MARYLAND_JURISDICTION = OPENSTATES_JURISDICTION  # backwards-compatible alias
 
 
 class OpenStatesClient:
@@ -88,7 +90,7 @@ class OpenStatesClient:
         per_page: int = 20,
     ) -> dict:
         """
-        Fetch Maryland bills with optional filters.
+        Fetch state bills with optional filters.
 
         Args:
             session: Legislative session (e.g., "2025"). Defaults to current.
@@ -118,7 +120,7 @@ class OpenStatesClient:
         updated_since: str | None = None,
     ) -> Generator[dict, None, None]:
         """
-        Fetch all Maryland bills with automatic pagination.
+        Fetch all state bills with automatic pagination.
 
         Yields individual bill records.
         """

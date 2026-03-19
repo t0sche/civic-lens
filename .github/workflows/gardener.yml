@@ -488,9 +488,8 @@ jobs:
     name: Agentic Intent Audit
     runs-on: ubuntu-latest
     needs: [lint-and-typecheck, python-lint, build-check, python-tests, security-audit]
-    # Run after health checks pass; skip on PR events (too expensive for every push)
+    # Always run after health checks (even on failure so agent can fix); skip on PRs
     if: |
-      github.event_name != 'pull_request' &&
       always() &&
       github.event_name != 'pull_request' &&
       (github.event.inputs.run_intent_audit != 'false')
@@ -580,6 +579,7 @@ jobs:
           BODY+="| Next.js Build | ${{ needs.build-check.result }} |\n"
           BODY+="| Python Tests | ${{ needs.python-tests.result }} |\n"
           BODY+="| Dependency Audit | ${{ needs.dependency-audit.result }} |\n"
+          BODY+="| Security Audit | ${{ needs.security-audit.result }} |\n"
           BODY+="| Smoke Test & E2E | ${{ needs.smoke-and-e2e.result }} |\n"
           BODY+="| Intent Audit | ${{ needs.intent-audit.result }} |\n"
           BODY+="\n### Next Steps\n\n"

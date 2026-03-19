@@ -72,7 +72,7 @@ class LegislativeItem(BaseModel):
     bronze_id: Optional[str] = None
     source_id: str
     jurisdiction: JurisdictionLevel
-    body: str  # e.g., "Maryland General Assembly", "Harford County Council"
+    body: str  # e.g., "State Legislature", "County Council"
     item_type: LegislativeType
     title: str
     summary: Optional[str] = None
@@ -98,7 +98,7 @@ class CodeSection(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     bronze_id: Optional[str] = None
     jurisdiction: JurisdictionLevel
-    code_source: str  # "Harford County Code" or "Town of Bel Air Code"
+    code_source: str  # e.g., "County Code" or "Municipal Code"
     chapter: str
     section: str
     title: str

@@ -12,6 +12,7 @@
  */
 
 import { createServerClient } from "./supabase-client";
+import { getLocality, buildLocalityDescription } from "./locality";
 
 export interface RetrievedChunk {
   id: string;
@@ -146,7 +147,10 @@ ${chunk.chunk_text}`;
     })
     .join("\n\n---\n\n");
 
-  const system = `You are CivicLens, a civic transparency assistant for Bel Air, Maryland (ZIP 21015). You help residents understand the laws, ordinances, and regulations that affect them across three levels of government: Maryland State, Harford County, and the Town of Bel Air.
+  const loc = getLocality();
+  const jurisdictionDesc = buildLocalityDescription();
+
+  const system = `You are CivicLens, a civic transparency assistant for ${loc.locality.name} (ZIP ${loc.zip}). You help residents understand the laws, ordinances, and regulations that affect them across ${jurisdictionDesc}.
 
 RULES:
 1. Answer based ONLY on the provided source documents. If the sources don't contain the answer, say so clearly.

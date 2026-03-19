@@ -1,8 +1,7 @@
 """
-Harford County Council bills tracker scraper.
+County council bills tracker scraper.
 
-Scrapes the custom ASP.NET application at:
-https://apps.harfordcountymd.gov/Legislation/Bills
+Scrapes the configured county council bills ASP.NET application.
 
 The site uses classic ASP.NET WebForms with __VIEWSTATE and __EVENTVALIDATION
 hidden fields. Each page request requires the ViewState from the previous
@@ -35,17 +34,20 @@ from src.lib.supabase import (
     start_ingestion_run,
     upsert_bronze_document,
 )
+from src.lib.config import get_county_config
 
 logger = logging.getLogger(__name__)
 
-BILLS_URL = "https://apps.harfordcountymd.gov/Legislation/Bills"
+_county = get_county_config()
+_scraper_cfg = _county["scrapers"].get("harford_bills", {}) if _county else {}
+BILLS_URL = _scraper_cfg.get("url", "")
 REQUEST_DELAY = 1.5   # Polite delay between requests (seconds)
 USER_AGENT = "CivicLens/1.0 (civic transparency research; contact: civiclensbair@gmail.com)"
 
 
 @dataclass
 class HarfordBill:
-    """A Harford County Council bill record."""
+    """A county council bill record."""
     bill_number: str
     title: str
     status: str
@@ -93,7 +95,7 @@ def _parse_bills_table(html: str) -> list[HarfordBill]:
     soup = BeautifulSoup(html, "lxml")
     bills = []
 
-    # Look for the results table — Harford County uses a GridView control
+    # Look for the results table — ASP.NET uses a GridView control
     table = (
         soup.find("table", {"id": re.compile(r"GridView|gvBills|Bills", re.I)})
         or soup.find("table", class_=re.compile(r"grid|bills", re.I))
@@ -183,7 +185,7 @@ def _parse_bills_table(html: str) -> list[HarfordBill]:
 
 def fetch_all_bills(session: requests.Session) -> Generator[HarfordBill, None, None]:
     """
-    Fetch all Harford County Council bills, handling ASP.NET pagination.
+    Fetch all county council bills, handling ASP.NET pagination.
 
     Yields HarfordBill objects as they are discovered.
     """
@@ -191,7 +193,7 @@ def fetch_all_bills(session: requests.Session) -> Generator[HarfordBill, None, N
     form_state = _get_aspnet_form_state(session)
 
     # POST to request the full listing (show all records or first page)
-    # The exact control IDs may vary — common patterns for Harford County
+    # The exact control IDs may vary — common patterns for ASP.NET WebForms
     post_data = {
         "__VIEWSTATE": form_state.get("__VIEWSTATE", ""),
         "__VIEWSTATEGENERATOR": form_state.get("__VIEWSTATEGENERATOR", ""),
@@ -277,10 +279,13 @@ def fetch_all_bills(session: requests.Session) -> Generator[HarfordBill, None, N
 
 def ingest_harford_bills() -> None:
     """
-    Main ingestion entry point: scrape Harford County bills and write to Bronze.
+    Main ingestion entry point: scrape county bills and write to Bronze.
 
     @spec INGEST-SCRAPE-040
     """
+    if not BILLS_URL:
+        logger.info("County bills scraper not configured — skipping")
+        return
     db = get_supabase_client()
     run_id = start_ingestion_run(db, "harford_bills")
 
@@ -302,7 +307,7 @@ def ingest_harford_bills() -> None:
                 "last_action_date": bill.last_action_date,
                 "detail_url": bill.detail_url,
                 "jurisdiction": "COUNTY",
-                "body": "Harford County Council",
+                "body": _county["body"] if _county else "County Council",
             })
 
             result = upsert_bronze_document(
@@ -332,12 +337,12 @@ def ingest_harford_bills() -> None:
             records_updated=updated,
         )
         logger.info(
-            f"Harford bills ingestion complete: {fetched} fetched, "
+            f"County bills ingestion complete: {fetched} fetched, "
             f"{new} new, {updated} updated"
         )
 
     except Exception as e:
-        logger.error(f"Harford bills ingestion failed: {e}")
+        logger.error(f"County bills ingestion failed: {e}")
         complete_ingestion_run(db, run_id, error_message=str(e))
         raise
 
