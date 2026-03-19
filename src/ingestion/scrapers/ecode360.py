@@ -21,12 +21,11 @@ from typing import Generator
 import cloudscraper
 from bs4 import BeautifulSoup
 
-from src.lib.config import get_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -230,6 +229,15 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO)
-    # Default: scrape Bel Air town code
-    ingest_municipal_code(BEL_AIR_CODE)
+    parser = argparse.ArgumentParser(description="Scrape an eCode360 municipal code")
+    parser.add_argument(
+        "--municipality",
+        default=BEL_AIR_CODE,
+        choices=[BEL_AIR_CODE, HARFORD_COUNTY_CODE],
+        help=f"Municipality code to scrape (default: {BEL_AIR_CODE} = Bel Air)",
+    )
+    args = parser.parse_args()
+    ingest_municipal_code(args.municipality)

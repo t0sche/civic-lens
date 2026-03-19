@@ -6,16 +6,15 @@ Uses the `responses` library to mock HTTP requests.
 @spec INGEST-API-001, INGEST-API-002
 """
 
-import json
 from urllib.parse import unquote
 
 import pytest
 import responses
 
 from src.ingestion.clients.openstates import (
-    OpenStatesClient,
     BASE_URL,
     MARYLAND_JURISDICTION,
+    OpenStatesClient,
 )
 
 

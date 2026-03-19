@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FIX_MODE="${1:-}"
 DATE_STAMP="$(date -u +'%Y-%m-%d')"
-BRANCH_NAME="gardener/intent-audit-${DATE_STAMP}"
+BRANCH_NAME="gardener-intent-audit-${DATE_STAMP}"
 REPORT_FILE="${REPO_ROOT}/.gardener-report.json"
 CONTEXT_FILE="${REPO_ROOT}/.gardener-context.md"
 
@@ -37,14 +37,56 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   exit 1
 fi
 
+# ─── Collect upstream health check results ─────────────────────────
+LINT_RESULT="${GARDENER_LINT_RESULT:-unknown}"
+PYLINT_RESULT="${GARDENER_PYLINT_RESULT:-unknown}"
+BUILD_RESULT="${GARDENER_BUILD_RESULT:-unknown}"
+TEST_RESULT="${GARDENER_TEST_RESULT:-unknown}"
+
+HAS_FAILURES="false"
+FAILURE_SUMMARY=""
+if [ "$LINT_RESULT" = "failure" ]; then
+  HAS_FAILURES="true"
+  FAILURE_SUMMARY="${FAILURE_SUMMARY}
+- LINT FAILED: Run 'npm run lint' and 'npx tsc --noEmit' to see errors. Fix lint and type errors in src/."
+fi
+if [ "$PYLINT_RESULT" = "failure" ]; then
+  HAS_FAILURES="true"
+  FAILURE_SUMMARY="${FAILURE_SUMMARY}
+- PYTHON LINT FAILED: Run 'ruff check src/ tests/' to see errors. Fix ruff violations in Python code."
+fi
+if [ "$BUILD_RESULT" = "failure" ]; then
+  HAS_FAILURES="true"
+  FAILURE_SUMMARY="${FAILURE_SUMMARY}
+- BUILD FAILED: Run 'npm run build' to see errors. Fix build-breaking issues in src/."
+fi
+if [ "$TEST_RESULT" = "failure" ]; then
+  HAS_FAILURES="true"
+  FAILURE_SUMMARY="${FAILURE_SUMMARY}
+- TESTS FAILED: Run 'pytest tests/ -v --tb=short' to see failures. Fix failing tests by fixing the code (not the test expectations)."
+fi
+
 # ─── Write prompt files ───────────────────────────────────────────
 AUDIT_PROMPT_FILE="$(mktemp)"
 FIX_PROMPT_FILE="$(mktemp)"
 trap 'rm -f "$AUDIT_PROMPT_FILE" "$FIX_PROMPT_FILE"' EXIT
 
-cat > "$AUDIT_PROMPT_FILE" << 'PROMPT_EOF'
+cat > "$AUDIT_PROMPT_FILE" << PROMPT_EOF
 You are the CivicLens Gardener — an autonomous maintenance agent responsible for
 keeping this repository aligned with its stated design intent.
+
+## Upstream Health Check Results
+
+| Check | Result |
+|-------|--------|
+| Frontend Lint & TypeCheck | ${LINT_RESULT} |
+| Python Lint (Ruff) | ${PYLINT_RESULT} |
+| Next.js Build | ${BUILD_RESULT} |
+| Python Tests | ${TEST_RESULT} |
+$(if [ "$HAS_FAILURES" = "true" ]; then echo "
+FAILURES DETECTED — These must be investigated and included in your report:
+${FAILURE_SUMMARY}
+"; fi)
 
 ## Context Recovery (Token Optimization)
 
@@ -150,13 +192,48 @@ This context file is committed to the repo so future runs can resume efficiently
 Begin by reading docs/arrows/index.yaml, then systematically audit each arrow.
 PROMPT_EOF
 
-cat > "$FIX_PROMPT_FILE" << 'FIX_EOF'
+cat > "$FIX_PROMPT_FILE" << FIX_EOF
 You are the CivicLens Gardener continuing from an audit. The audit report is at
 .gardener-report.json. Read it now.
 
+## Upstream Health Check Results
+
+| Check | Result |
+|-------|--------|
+| Frontend Lint & TypeCheck | ${LINT_RESULT} |
+| Python Lint (Ruff) | ${PYLINT_RESULT} |
+| Next.js Build | ${BUILD_RESULT} |
+| Python Tests | ${TEST_RESULT} |
+
 ## Your Mandate — Fix Phase
 
-Based on the audit findings, make targeted improvements:
+Priority order (fix the most critical issues first):
+
+### Priority 1: Fix Failing Health Checks
+
+If ANY upstream health check failed, this is your TOP PRIORITY. Before doing
+anything else:
+
+a. REPRODUCE the failure — run the failing command yourself to see the exact errors:
+   - Lint failed: run 'npx next lint' and 'npx tsc --noEmit'
+   - Python lint failed: run 'ruff check src/ tests/'
+   - Build failed: run 'npx next build' (may need env vars — check .env.example)
+   - Tests failed: run 'pytest tests/ -v --tb=short'
+
+b. READ the error output carefully. Understand the root cause.
+
+c. FIX the code that is causing the failure. Common patterns:
+   - Type errors: fix the TypeScript types, add missing type annotations
+   - Lint errors: fix the lint violations in the source code
+   - Ruff errors: fix Python style/import issues
+   - Test failures: fix the APPLICATION CODE so tests pass (never weaken tests)
+   - Build failures: fix import errors, missing dependencies, config issues
+
+d. RE-RUN the command to verify your fix actually works before moving on.
+
+### Priority 2: Fix Drift (Intent Alignment)
+
+After all health checks are green (or were already passing):
 
 1. Update arrow drift fields — For each arrow where drift was detected, update
    docs/arrows/index.yaml to set the drift field with a concise description
@@ -182,16 +259,19 @@ Based on the audit findings, make targeted improvements:
 
 ## Rules
 
+- ALWAYS fix failing health checks before addressing drift.
+- Fix the code, not the tests — if a test fails, the code is wrong.
 - Only make changes that are clearly correct and low-risk.
-- Prefer documentation accuracy over code changes.
+- Prefer documentation accuracy over code changes (for drift fixes).
 - Never delete code or remove features.
-- Never modify test expectations to make them pass — fix the code instead.
+- After fixing health checks, re-run the command to verify the fix.
 - Limit total changes to what's reviewable in a single PR (<500 lines diff).
 - After making changes, provide a clear commit message and summary.
 
 ## Start
 
-Read .gardener-report.json and begin making improvements.
+Read .gardener-report.json and begin making improvements. If health checks
+failed, start by reproducing and fixing those failures.
 FIX_EOF
 
 # ─── Run the audit ─────────────────────────────────────────────────
@@ -200,7 +280,7 @@ echo "Gardener: Running intent audit..."
 AUDIT_PROMPT="$(cat "$AUDIT_PROMPT_FILE")"
 claude -p "$AUDIT_PROMPT" \
   --output-format text \
-  --max-turns 30 \
+  --max-turns 50 \
   --allowedTools "Read,Glob,Grep,Write,Bash(cat:*),Bash(wc:*),Bash(find:*)" \
   2>&1
 
@@ -231,27 +311,40 @@ fi
 echo ""
 echo "Gardener: Entering fix mode — creating improvements branch..."
 
-# Check for drift before doing work
+# Check if there's work to do (drift or health check failures)
 DRIFT_COUNT="$(python3 -c "
 import json
 r = json.load(open('$REPORT_FILE'))
 print(sum(1 for a in r.get('arrows', []) if a.get('drift_detected')))
 " 2>/dev/null || echo "0")"
 
-if [ "$DRIFT_COUNT" = "0" ]; then
-  echo "No drift detected. Nothing to fix."
+if [ "$DRIFT_COUNT" = "0" ] && [ "$HAS_FAILURES" = "false" ]; then
+  echo "No drift detected and all health checks passed. Nothing to fix."
   exit 0
 fi
 
-# Create branch
+if [ "$HAS_FAILURES" = "true" ]; then
+  echo "Health check failures detected — agent will attempt to fix them."
+fi
+if [ "$DRIFT_COUNT" != "0" ]; then
+  echo "Intent drift detected in $DRIFT_COUNT arrows."
+fi
+
+# Create branch (append short hash if name already exists)
+if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null || \
+   git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+  SHORT_HASH="$(git rev-parse --short HEAD)"
+  BRANCH_NAME="${BRANCH_NAME}-${SHORT_HASH}"
+  echo "Branch name collision — using $BRANCH_NAME"
+fi
 git checkout -b "$BRANCH_NAME"
 
 # Run the fix agent
 FIX_PROMPT="$(cat "$FIX_PROMPT_FILE")"
 claude -p "$FIX_PROMPT" \
   --output-format text \
-  --max-turns 20 \
-  --allowedTools "Read,Glob,Grep,Write,Edit,Bash(cat:*),Bash(wc:*),Bash(find:*),Bash(git:status),Bash(git:diff),Bash(git:add)" \
+  --max-turns 50 \
+  --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
   2>&1
 
 # Check if there are changes
@@ -302,7 +395,7 @@ and annotation updates, with minor code fixes where specs were almost met.
 
 ---
 Generated by CivicLens Gardener" \
-  --label "gardener,maintenance" \
+  --label "gardener" \
   --base main
 
 echo "Gardener: PR created successfully."

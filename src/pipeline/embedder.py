@@ -9,14 +9,12 @@ boundaries, not by token count. This preserves the semantic units
 of legal text — statutes, ordinances, and code sections are naturally
 bounded by section numbers.
 
-@spec DATA-EMBED-001, DATA-EMBED-002, DATA-EMBED-003
+@spec EMBED-CHUNK-001, EMBED-GEN-001, EMBED-WRITE-001
 """
 
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any
 
 from src.lib.config import get_config
 from src.lib.models import ChunkSourceType, DocumentChunk, JurisdictionLevel
@@ -45,7 +43,8 @@ def chunk_code_section(
     Short sections (< MAX_CHUNK_CHARS) become a single chunk.
     Long sections are sub-chunked at paragraph boundaries with overlap.
 
-    @spec DATA-EMBED-001
+    @spec EMBED-CHUNK-001, EMBED-CHUNK-002, EMBED-CHUNK-003,
+          EMBED-CHUNK-004, EMBED-CHUNK-005, EMBED-CHUNK-006
     """
     if len(content) <= MAX_CHUNK_CHARS:
         return [DocumentChunk(
@@ -109,7 +108,7 @@ def chunk_legislative_item(
     For MVP, legislative items are typically short enough for a single chunk
     (title + summary). Full bill text chunking is a Phase 4+ concern.
 
-    @spec DATA-EMBED-002
+    @spec EMBED-CHUNK-001, EMBED-CHUNK-002
     """
     text_parts = [title]
     if summary:
@@ -140,7 +139,7 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     require Gemini embeddings. Do not substitute a different model without
     updating the DB schema and the TypeScript query-side embedding call.
 
-    @spec DATA-EMBED-003
+    @spec EMBED-GEN-001, EMBED-GEN-003
     """
     config = get_config()
 
@@ -191,7 +190,7 @@ def run_embedding_pipeline(source_type: str | None = None) -> None:
     Processes code_sections and legislative_items that don't yet have
     corresponding document_chunks.
 
-    @spec DATA-EMBED-001, DATA-EMBED-002
+    @spec EMBED-WRITE-001, EMBED-WRITE-002, EMBED-WRITE-003
     """
     db = get_supabase_client()
 
