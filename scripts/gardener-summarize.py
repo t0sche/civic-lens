@@ -39,5 +39,24 @@ def main():
             detail = finding.get("detail", "")
             print(f"  - [{severity}] {detail}")
 
+    sec = r.get("security", {})
+    if sec:
+        print()
+        threat = sec.get("threat_level", "unknown")
+        print(f"### Security Threat Level: {threat.upper()}")
+        print()
+        findings = sec.get("findings", [])
+        if findings:
+            print("| Severity | Category | Location | Detail |")
+            print("|----------|----------|----------|--------|")
+            for f in findings:
+                sev = f.get("severity", "?")
+                cat = f.get("category", "?")
+                loc = f.get("location", "?")
+                det = f.get("detail", "")
+                print(f"| {sev} | {cat} | {loc} | {det} |")
+        else:
+            print("No security findings.")
+
 if __name__ == "__main__":
     main()
