@@ -1,11 +1,13 @@
 # CivicLens Gardener — Automated repo health checks, intent auditing, and QA
 #
-# Runs weekly (Monday 7 AM ET) and on manual dispatch.
-# Reports issues via GitHub Issues when problems are found.
-# Uses Claude Code agents to audit code against arrows of intent and propose fixes via PR.
+# Triggers:
+#   - Weekly (Monday 7 AM ET): Full suite — lint, build, tests, deps, E2E, intent audit
+#   - Pull requests to main: Lint, build, tests + preview deployment E2E validation
+#   - Manual dispatch: Configurable full suite
 #
 # Required secrets:
-#   DEPLOY_URL       — Production/preview Vercel URL (e.g., https://civic-lens.vercel.app)
+#   DEPLOY_URL        — Production Vercel URL (e.g., https://civic-lens.vercel.app)
+#   VERCEL_PROJECT_ID — Vercel project ID (for preview URL lookup via API)
 #   ANTHROPIC_API_KEY — Claude API key for agentic intent auditing
 
 name: Gardener
@@ -14,6 +16,9 @@ on:
   schedule:
     # Weekly: Monday at 12:00 UTC (7:00 AM ET)
     - cron: '0 12 * * 1'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       deploy_url:
@@ -35,6 +40,8 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  deployments: read
+  statuses: read
 
 jobs:
   # ─── Code Quality ──────────────────────────────────────────────────
@@ -121,6 +128,7 @@ jobs:
   dependency-audit:
     name: Dependency Health Check
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     outputs:
       npm_outdated: ${{ steps.npm.outputs.outdated }}
       pip_outdated: ${{ steps.pip.outputs.outdated }}
@@ -177,10 +185,131 @@ jobs:
             echo "All pip packages are up to date." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # ─── Deployment Smoke Test + E2E ────────────────────────────────────
-  smoke-and-e2e:
-    name: Deployment Smoke Test & E2E
+  # ─── PR Preview Deployment Check ─────────────────────────────────────
+  preview-check:
+    name: Preview Deployment E2E
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [lint-and-typecheck, build-check, python-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for Vercel preview deployment
+        id: preview
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Waiting for Vercel deployment for commit ${SHA:0:7}..."
+
+          # Poll GitHub Deployments API for up to 5 minutes
+          for i in $(seq 1 30); do
+            # Get deployments for this commit
+            DEPLOY_URL=$(gh api \
+              "repos/${{ github.repository }}/deployments?sha=${SHA}&environment=Preview" \
+              --jq '.[0].id' 2>/dev/null || echo "")
+
+            if [ -n "$DEPLOY_URL" ] && [ "$DEPLOY_URL" != "null" ]; then
+              # Get the deployment status (look for success with a target_url)
+              TARGET_URL=$(gh api \
+                "repos/${{ github.repository }}/deployments/${DEPLOY_URL}/statuses" \
+                --jq '[.[] | select(.state == "success")][0].target_url // empty' 2>/dev/null || echo "")
+
+              if [ -n "$TARGET_URL" ]; then
+                echo "Preview deployment ready: $TARGET_URL"
+                echo "url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+                echo "ready=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+
+            echo "Attempt $i/30 — deployment not ready yet, waiting 10s..."
+            sleep 10
+          done
+
+          # Fallback: construct URL from Vercel naming convention
+          BRANCH="${{ github.head_ref }}"
+          SLUG=$(echo "$BRANCH" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
+          FALLBACK_URL="https://civic-lens-git-${SLUG}-t0sche.vercel.app"
+          echo "::warning::Deployment API timed out. Trying fallback URL: $FALLBACK_URL"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$FALLBACK_URL" || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Fallback URL is live."
+            echo "url=$FALLBACK_URL" >> "$GITHUB_OUTPUT"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Could not find a live preview deployment (API timeout + fallback HTTP $HTTP_CODE)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Smoke test — preview homepage
+        if: steps.preview.outputs.ready == 'true'
+        run: |
+          URL="${{ steps.preview.outputs.url }}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          echo "Homepage HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Preview homepage returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Smoke test — preview chat page
+        if: steps.preview.outputs.ready == 'true'
+        run: |
+          URL="${{ steps.preview.outputs.url }}/chat"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          echo "Chat page HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Preview chat page returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Run Playwright E2E against preview
+        if: steps.preview.outputs.ready == 'true'
+        env:
+          DEPLOY_URL: ${{ steps.preview.outputs.url }}
+        run: npx playwright test --project=chromium
+
+      - name: Upload Playwright report
+        if: always() && steps.preview.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Post preview check result to PR
+        if: always() && steps.preview.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            gh pr comment "$PR_NUMBER" --body "### Preview Deployment Check: Passed"$'\n\n'"All E2E tests passed. Preview: $PREVIEW_URL"
+          else
+            gh pr comment "$PR_NUMBER" --body "### Preview Deployment Check: Failed"$'\n\n'"E2E tests failed. [View logs]($RUN_URL). Preview: $PREVIEW_URL"
+          fi
+
+  # ─── Deployment Smoke Test + E2E (Production — schedule/dispatch only) ──
+  smoke-and-e2e:
+    name: Production Smoke Test & E2E
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
@@ -243,13 +372,125 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
+  # ─── Security Checks ───────────────────────────────────────────────────
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit (production dependencies)
+        run: |
+          set +e
+          OUTPUT=$(npm audit --omit=dev --json 2>/dev/null || true)
+          VULNS=$(echo "$OUTPUT" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              v = data.get('metadata', {}).get('vulnerabilities', {})
+              print(json.dumps(v))
+          except: print('{}')
+          ")
+          HIGH=$(echo "$VULNS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('high',0)+d.get('critical',0))")
+          echo "### npm audit" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$HIGH" -gt 0 ]; then
+            echo "**$HIGH high/critical vulnerabilities found**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "$VULNS" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No high/critical vulnerabilities." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: pip audit (Python dependencies)
+        run: |
+          pip install pip-audit
+          set +e
+          OUTPUT=$(pip-audit --format=json 2>/dev/null || true)
+          echo "### pip audit" >> "$GITHUB_STEP_SUMMARY"
+          VULN_COUNT=$(echo "$OUTPUT" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              print(len(data.get('dependencies', []) if isinstance(data, dict) else data))
+          except: print('0')
+          ")
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "**$VULN_COUNT vulnerable packages found**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" | head -100 >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No known vulnerabilities." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check for secrets in codebase
+        run: |
+          echo "### Secrets scan" >> "$GITHUB_STEP_SUMMARY"
+          PATTERNS='(sk-ant-|sk-proj-|ghp_|gho_|AKIA[0-9A-Z]{16}|password\s*=\s*["\x27][^"\x27]{8,})'
+          set +e
+          MATCHES=$(grep -rn -E "$PATTERNS" --include='*.ts' --include='*.tsx' --include='*.py' --include='*.js' --include='*.json' --exclude-dir=node_modules --exclude-dir=.git src/ tests/ 2>/dev/null | grep -v '.env' | grep -v 'example' | head -20)
+          if [ -n "$MATCHES" ]; then
+            echo "**Potential hardcoded secrets found:**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$MATCHES" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Potential hardcoded secrets detected in source code"
+          else
+            echo "No hardcoded secrets detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check for exposed environment variables
+        run: |
+          echo "### Environment variable exposure" >> "$GITHUB_STEP_SUMMARY"
+          set +e
+          # Check if .env files are committed (they shouldn't be)
+          ENV_FILES=$(git ls-files '.env' '.env.local' '.env.production' 2>/dev/null)
+          if [ -n "$ENV_FILES" ]; then
+            echo "**.env files committed to repo:**" >> "$GITHUB_STEP_SUMMARY"
+            echo "$ENV_FILES" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::.env files should not be committed"
+          else
+            echo "No .env files committed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check security headers in Next.js config
+        run: |
+          echo "### Security headers" >> "$GITHUB_STEP_SUMMARY"
+          if grep -q 'headers' next.config.ts 2>/dev/null || grep -q 'headers' next.config.js 2>/dev/null || grep -q 'headers' next.config.mjs 2>/dev/null; then
+            echo "Security headers configured in Next.js config." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::No security headers found in Next.js config (CSP, X-Frame-Options, etc.)" >> "$GITHUB_STEP_SUMMARY"
+            echo "**No security headers configured.** Consider adding CSP, X-Frame-Options, X-Content-Type-Options." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # ─── Agentic Intent Audit ────────────────────────────────────────────
   intent-audit:
     name: Agentic Intent Audit
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck, python-lint, build-check, python-tests]
-    # Always run after health checks — if checks failed, the agent should try to fix them
+    needs: [lint-and-typecheck, python-lint, build-check, python-tests, security-audit]
+    # Run after health checks pass; skip on PR events (too expensive for every push)
     if: |
+      github.event_name != 'pull_request' &&
       always() &&
       github.event_name != 'pull_request' &&
       (github.event.inputs.run_intent_audit != 'false')
@@ -318,9 +559,11 @@ jobs:
       - build-check
       - python-tests
       - dependency-audit
+      - security-audit
       - smoke-and-e2e
       - intent-audit
-    if: failure()
+      - preview-check
+    if: failure() && github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
