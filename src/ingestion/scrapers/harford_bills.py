@@ -123,7 +123,20 @@ def _parse_bills_table(html: str) -> list[HarfordBill]:
     sponsor_col = col_index("sponsor")
     intro_col = col_index("introduc") if col_index("introduc") >= 0 else col_index("date")
     status_col = col_index("status")
-    action_col = col_index("action") if col_index("action") >= 0 else col_index("last")
+
+    # Distinguish between "Last Action" (description) and "Last Action Date"
+    # headers is already lowercased (line above), so substring checks are case-safe.
+    # Prefer a column that contains "action" but NOT "date" for the text description
+    action_col = -1
+    action_date_col = -1
+    for i, h in enumerate(headers):
+        if "action" in h and "date" in h and action_date_col < 0:
+            action_date_col = i
+        elif "action" in h and "date" not in h and action_col < 0:
+            action_col = i
+    # Fall back to any "action" or "last" column if specific split not found
+    if action_col < 0:
+        action_col = col_index("action") if col_index("action") >= 0 else col_index("last")
 
     for row in rows[1:]:
         cells = row.find_all(["td"])
@@ -161,6 +174,7 @@ def _parse_bills_table(html: str) -> list[HarfordBill]:
             sponsors=sponsors,
             introduced_date=cell_text(intro_col) if intro_col >= 0 else None,
             last_action=cell_text(action_col) if action_col >= 0 else None,
+            last_action_date=cell_text(action_date_col) if action_date_col >= 0 else None,
             detail_url=detail_url,
         ))
 
