@@ -35,9 +35,12 @@ def main():
         actual = arrow.get("actual_status", "?")
         print(f"- [{icon}] **{name}**: {declared} -> {actual}")
         for finding in arrow.get("findings", [])[:3]:
-            severity = finding.get("severity", "?")
-            detail = finding.get("detail", "")
-            print(f"  - [{severity}] {detail}")
+            if isinstance(finding, dict):
+                severity = finding.get("severity", "?")
+                detail = finding.get("detail", "")
+                print(f"  - [{severity}] {detail}")
+            else:
+                print(f"  - {finding}")
 
     sec = r.get("security", {})
     if sec:
@@ -50,11 +53,14 @@ def main():
             print("| Severity | Category | Location | Detail |")
             print("|----------|----------|----------|--------|")
             for f in findings:
-                sev = f.get("severity", "?")
-                cat = f.get("category", "?")
-                loc = f.get("location", "?")
-                det = f.get("detail", "")
-                print(f"| {sev} | {cat} | {loc} | {det} |")
+                if isinstance(f, dict):
+                    sev = f.get("severity", "?")
+                    cat = f.get("category", "?")
+                    loc = f.get("location", "?")
+                    det = f.get("detail", "")
+                    print(f"| {sev} | {cat} | {loc} | {det} |")
+                else:
+                    print(f"| ? | ? | ? | {f} |")
         else:
             print("No security findings.")
 
