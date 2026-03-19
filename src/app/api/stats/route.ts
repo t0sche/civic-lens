@@ -16,10 +16,20 @@ export async function GET() {
   const jurisdictions = getJurisdictionNames();
 
   // Latest ingestion run per source
-  const { data: runs } = await db
+  const { data: runs, error: runsError } = await db
     .from("ingestion_runs")
     .select("*")
     .order("started_at", { ascending: false });
+
+  if (runsError) {
+    return NextResponse.json(
+      {
+        error: "Failed to fetch latest ingestion runs",
+        details: runsError.message ?? runsError,
+      },
+      { status: 500 },
+    );
+  }
 
   // Deduplicate to latest per source
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +47,24 @@ export async function GET() {
     db.from("code_sections").select("id", { count: "exact", head: true }),
     db.from("document_chunks").select("id", { count: "exact", head: true }),
   ]);
+
+  const countError =
+    bronze.error || legislative.error || codeSections.error || chunks.error;
+
+  if (countError) {
+    return NextResponse.json(
+      {
+        error: "Failed to fetch record counts",
+        details:
+          (bronze.error && bronze.error.message) ||
+          (legislative.error && legislative.error.message) ||
+          (codeSections.error && codeSections.error.message) ||
+          (chunks.error && chunks.error.message) ||
+          countError,
+      },
+      { status: 500 },
+    );
+  }
 
   // Pipeline health: embedding coverage
   const silverTotal = (legislative.count ?? 0) + (codeSections.count ?? 0);
