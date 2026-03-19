@@ -52,6 +52,10 @@ data/
 # LegiScan API response cache
 .cache/
 
+# Gardener (ephemeral audit report — context file is tracked)
+.gardener-report.json
+playwright-report/
+
 # Debug
 npm-debug.log*
 yarn-debug.log*

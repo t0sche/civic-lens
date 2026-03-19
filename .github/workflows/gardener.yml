@@ -1,0 +1,346 @@
+# CivicLens Gardener — Automated repo health checks, intent auditing, and QA
+#
+# Runs weekly (Monday 7 AM ET) and on manual dispatch.
+# Reports issues via GitHub Issues when problems are found.
+# Uses Claude Code agents to audit code against arrows of intent and propose fixes via PR.
+#
+# Required secrets:
+#   DEPLOY_URL       — Production/preview Vercel URL (e.g., https://civic-lens.vercel.app)
+#   ANTHROPIC_API_KEY — Claude API key for agentic intent auditing
+
+name: Gardener
+
+on:
+  schedule:
+    # Weekly: Monday at 12:00 UTC (7:00 AM ET)
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+    inputs:
+      deploy_url:
+        description: 'Override deployment URL to test'
+        required: false
+        default: ''
+      run_intent_audit:
+        description: 'Run the agentic intent audit (uses Claude API credits)'
+        type: boolean
+        required: false
+        default: true
+      fix_mode:
+        description: 'Create PR with fixes when drift is found'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # ─── Code Quality ──────────────────────────────────────────────────
+  lint-and-typecheck:
+    name: Frontend Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript type check
+        run: npx tsc --noEmit
+
+  python-lint:
+    name: Python Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Ruff linter
+        run: ruff check src/ tests/
+
+  # ─── Build Verification ────────────────────────────────────────────
+  build-check:
+    name: Next.js Build Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: npm run build
+
+  # ─── Test Suites ────────────────────────────────────────────────────
+  python-tests:
+    name: Python Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short
+
+  # ─── Dependency Health ──────────────────────────────────────────────
+  dependency-audit:
+    name: Dependency Health Check
+    runs-on: ubuntu-latest
+    outputs:
+      npm_outdated: ${{ steps.npm.outputs.outdated }}
+      pip_outdated: ${{ steps.pip.outputs.outdated }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Check npm outdated
+        id: npm
+        run: |
+          set +e
+          OUTPUT=$(npm outdated --json 2>/dev/null || true)
+          if [ "$OUTPUT" != "{}" ] && [ -n "$OUTPUT" ]; then
+            echo "outdated=true" >> "$GITHUB_OUTPUT"
+            echo "### npm outdated packages" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "outdated=false" >> "$GITHUB_OUTPUT"
+            echo "All npm packages are up to date." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install pip dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check pip outdated
+        id: pip
+        run: |
+          set +e
+          OUTPUT=$(pip list --outdated --format=json 2>/dev/null || true)
+          if [ "$OUTPUT" != "[]" ] && [ -n "$OUTPUT" ]; then
+            echo "outdated=true" >> "$GITHUB_OUTPUT"
+            echo "### pip outdated packages" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "outdated=false" >> "$GITHUB_OUTPUT"
+            echo "All pip packages are up to date." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ─── Deployment Smoke Test + E2E ────────────────────────────────────
+  smoke-and-e2e:
+    name: Deployment Smoke Test & E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Determine deploy URL
+        id: url
+        run: |
+          URL="${{ github.event.inputs.deploy_url || secrets.DEPLOY_URL || '' }}"
+          if [ -z "$URL" ]; then
+            echo "::warning::No DEPLOY_URL set. Skipping deployment tests."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "url=$URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Smoke test — HTTP health check
+        if: steps.url.outputs.skip != 'true'
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.url.outputs.url }}")
+          echo "HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Deployment health check failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Deployment is healthy (HTTP 200)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test — chat endpoint reachable
+        if: steps.url.outputs.skip != 'true'
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.url.outputs.url }}/chat")
+          echo "Chat page HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Chat page returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Run Playwright E2E tests
+        if: steps.url.outputs.skip != 'true'
+        env:
+          DEPLOY_URL: ${{ steps.url.outputs.url }}
+        run: npx playwright test --project=chromium
+
+      - name: Upload Playwright report
+        if: always() && steps.url.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  # ─── Agentic Intent Audit ────────────────────────────────────────────
+  intent-audit:
+    name: Agentic Intent Audit
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, python-lint, build-check, python-tests]
+    # Run after health checks pass (no point auditing intent if code doesn't build)
+    if: |
+      always() &&
+      (needs.lint-and-typecheck.result == 'success' || needs.lint-and-typecheck.result == 'skipped') &&
+      (needs.build-check.result == 'success' || needs.build-check.result == 'skipped') &&
+      (github.event.inputs.run_intent_audit != 'false')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full clone needed for branch creation
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Configure git identity
+        run: |
+          git config user.name "CivicLens Gardener"
+          git config user.email "gardener@civiclens.dev"
+
+      - name: Run intent audit
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FIX_FLAG=""
+          if [ "${{ github.event.inputs.fix_mode }}" != "false" ]; then
+            FIX_FLAG="--fix"
+          fi
+          chmod +x scripts/gardener-audit.sh
+          ./scripts/gardener-audit.sh $FIX_FLAG
+
+      - name: Upload audit report and context
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gardener-intent-report
+          path: |
+            .gardener-report.json
+            .gardener-context.md
+          retention-days: 30
+
+  # ─── Reporting ──────────────────────────────────────────────────────
+  report:
+    name: Report Issues
+    runs-on: ubuntu-latest
+    needs:
+      - lint-and-typecheck
+      - python-lint
+      - build-check
+      - python-tests
+      - dependency-audit
+      - smoke-and-e2e
+      - intent-audit
+    if: failure()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect failure details
+        id: failures
+        run: |
+          BODY="## Gardener Report — $(date -u +'%Y-%m-%d %H:%M UTC')\n\n"
+          BODY+="The weekly gardener run found issues that need attention.\n\n"
+          BODY+="### Job Results\n\n"
+          BODY+="| Job | Result |\n"
+          BODY+="|-----|--------|\n"
+          BODY+="| Frontend Lint & Type Check | ${{ needs.lint-and-typecheck.result }} |\n"
+          BODY+="| Python Lint (Ruff) | ${{ needs.python-lint.result }} |\n"
+          BODY+="| Next.js Build | ${{ needs.build-check.result }} |\n"
+          BODY+="| Python Tests | ${{ needs.python-tests.result }} |\n"
+          BODY+="| Dependency Audit | ${{ needs.dependency-audit.result }} |\n"
+          BODY+="| Smoke Test & E2E | ${{ needs.smoke-and-e2e.result }} |\n"
+          BODY+="| Intent Audit | ${{ needs.intent-audit.result }} |\n"
+          BODY+="\n### Next Steps\n\n"
+          BODY+="1. Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed logs\n"
+          BODY+="2. Fix failing checks and verify locally\n"
+          BODY+="3. Close this issue once resolved\n"
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "body<<$EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$BODY" >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Gardener: health check failures $(date -u +'%Y-%m-%d')" \
+            --body "${{ steps.failures.outputs.body }}" \
+            --label "gardener,maintenance"
