@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.legiscan.com"
 _STATE_CONFIG = get_state_config()
-MARYLAND_STATE_ID = _STATE_CONFIG["legiscan_state_id"]
+LEGISCAN_STATE_ID = _STATE_CONFIG["legiscan_state_id"]
+# Backward-compatible alias; prefer LEGISCAN_STATE_ID for new code.
+MARYLAND_STATE_ID = LEGISCAN_STATE_ID
 _STATE_ABBREV = _STATE_CONFIG["abbrev"]
 MONTHLY_QUERY_LIMIT = 30_000
 QUERY_WARNING_THRESHOLD = 0.80  # Warn at 80% of monthly limit
