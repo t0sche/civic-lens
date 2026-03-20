@@ -2,6 +2,7 @@
 
 import config from "../../../civic-lens.config.json";
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
 
 /**
  * Chat interface for asking questions about local law.
@@ -222,8 +223,12 @@ export default function ChatPage() {
                     : "border border-gray-200 bg-white text-gray-800"
               }`}
             >
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {msg.content}
+              <div className="prose prose-sm max-w-none text-inherit [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_table]:text-xs [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_hr]:my-3">
+                {msg.role === "user" || msg.isError ? (
+                  <span className="whitespace-pre-wrap text-sm">{msg.content}</span>
+                ) : (
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                )}
               </div>
               {msg.detail && (
                 <div className="mt-2 rounded bg-amber-100 px-2 py-1 font-mono text-[11px] text-amber-700">
@@ -281,8 +286,8 @@ export default function ChatPage() {
         {loading && streamingContent && (
           <div className="flex justify-start">
             <div className="max-w-[85%] rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-800">
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {streamingContent}
+              <div className="prose prose-sm max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm">
+                <ReactMarkdown>{streamingContent}</ReactMarkdown>
                 <span className="inline-block h-4 w-1 animate-pulse bg-blue-400" />
               </div>
             </div>
