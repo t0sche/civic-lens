@@ -413,7 +413,7 @@ def _embed_gemini(texts, api_key):
     client = genai.Client(api_key=api_key)
     embeddings = []
     for text in texts:
-        result = client.models.embed_content(model="text-embedding-004", contents=text)
+        result = client.models.embed_content(model="gemini-embedding-001", contents=text)
         embeddings.append(result.embeddings[0].values)
     return embeddings
 ```
@@ -696,7 +696,7 @@ sequenceDiagram
 
     Note over API: Step 1: Retrieve Context
     API->>RAG: retrieveContext(message)
-    RAG->>Gemini: embedQuery(message)<br/>text-embedding-004
+    RAG->>Gemini: embedQuery(message)<br/>gemini-embedding-001
     Gemini-->>RAG: number[] (768-dim vector)
     RAG->>Supabase: match_document_chunks RPC<br/>(embedding, threshold=0.3, topK=8)
     Supabase-->>RAG: RetrievedChunk[] + similarity scores
@@ -737,7 +737,7 @@ sequenceDiagram
 // @spec CHAT-RAG-001
 export async function embedQuery(query: string): Promise<number[]> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key=${process.env.GOOGLE_AI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:embedContent?key=${process.env.GOOGLE_AI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

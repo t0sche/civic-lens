@@ -133,7 +133,7 @@ def chunk_legislative_item(
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
     """
-    Generate 768-dimensional embeddings using Google Gemini text-embedding-004.
+    Generate 768-dimensional embeddings using Google Gemini gemini-embedding-001.
 
     The database schema (pgvector vector(768)) and the RAG query layer both
     require Gemini embeddings. Do not substitute a different model without
@@ -146,7 +146,7 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     if config.embedding_model != "gemini":
         raise ValueError(
             f"Unsupported embedding model: {config.embedding_model!r}. "
-            f"Only 'gemini' (text-embedding-004, 768-dim) is compatible with "
+            f"Only 'gemini' (gemini-embedding-001, 768-dim) is compatible with "
             f"the vector(768) database schema. Set EMBEDDING_MODEL=gemini."
         )
 
@@ -158,7 +158,7 @@ EMBEDDING_DIM = 768
 
 
 def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
-    """Generate embeddings using Google Gemini text-embedding-004 (768-dim)."""
+    """Generate embeddings using Google Gemini gemini-embedding-001 (768-dim)."""
     from google import genai
 
     client = genai.Client(api_key=api_key)
@@ -166,9 +166,9 @@ def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
     embeddings = []
     for text in texts:
         result = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             contents=text,
-            config={"task_type": "RETRIEVAL_DOCUMENT"},
+            config={"task_type": "RETRIEVAL_DOCUMENT", "output_dimensionality": 768},
         )
         values = result.embeddings[0].values
         if len(values) != EMBEDDING_DIM:
