@@ -1,6 +1,8 @@
 import { createServerClient } from "@/lib/supabase-client";
 import { getLocality, getJurisdictionNames } from "@/lib/locality";
 
+export const dynamic = "force-dynamic";
+
 interface IngestionRun {
   id: string;
   source: string;

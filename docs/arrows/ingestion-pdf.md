@@ -39,7 +39,7 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- **eCode360 PDF available** (2026-03-19): Full municipal code PDF downloaded from eCode360 website and placed in `.extra/`. This enables text extraction without live scraping for the initial corpus load. The PDF covers the complete Bel Air town code. Machine-generated (not scanned), so pdfplumber extraction quality should be high.
 
 ## Work Required
 

@@ -23,6 +23,7 @@ export interface RetrievedChunk {
   source_id: string;
   similarity: number;
   metadata: Record<string, unknown>;
+  source_url: string | null;
 }
 
 export interface RAGContext {
@@ -40,13 +41,14 @@ export interface RAGContext {
  */
 async function embedQuery(query: string): Promise<number[]> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key=${process.env.GOOGLE_AI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GOOGLE_AI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         content: { parts: [{ text: query }] },
         taskType: "RETRIEVAL_QUERY",
+        outputDimensionality: 768,
       }),
     }
   );
@@ -102,6 +104,7 @@ export async function retrieveContext(
     source_id: string;
     similarity: number;
     metadata: Record<string, unknown> | null;
+    source_url: string | null;
   };
   const chunks: RetrievedChunk[] = (data || []).map((row: RpcRow) => ({
     id: row.id,
@@ -112,6 +115,7 @@ export async function retrieveContext(
     source_id: row.source_id,
     similarity: row.similarity,
     metadata: row.metadata || {},
+    source_url: row.source_url ?? null,
   }));
 
   // Compute context metadata for model routing

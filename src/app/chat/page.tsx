@@ -2,6 +2,7 @@
 
 import config from "../../../civic-lens.config.json";
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
 
 /**
  * Chat interface for asking questions about local law.
@@ -19,11 +20,14 @@ interface Source {
   source_type: string;
   similarity: number;
   data_source?: string;
+  url: string | null;
 }
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  detail?: string;
+  isError?: boolean;
   sources?: Source[];
   model?: string;
   tier?: string;
@@ -82,14 +86,22 @@ export default function ChatPage() {
         });
 
         if (!response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
+          const statusMsg =
+            response.status === 400
+              ? "Invalid request."
+              : response.status === 429
+                ? "Too many requests — please wait a moment and try again."
+                : response.status >= 500
+                  ? `Server error (HTTP ${response.status}).`
+                  : `Request failed (HTTP ${response.status}).`;
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
-              content:
-                data.error ||
-                "Sorry, something went wrong. Please try again.",
+              isError: true,
+              content: data.error || statusMsg,
+              detail: data.detail,
             },
           ]);
           return;
@@ -141,13 +153,19 @@ export default function ChatPage() {
           },
         ]);
         setStreamingContent("");
-      } catch {
+      } catch (err) {
+        const msg =
+          err instanceof TypeError
+            ? "Unable to reach the server — check your connection."
+            : err instanceof Error
+              ? err.message
+              : "An unexpected error occurred.";
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content:
-              "Unable to connect to the server. Please check your connection and try again.",
+            isError: true,
+            content: msg,
           },
         ]);
       } finally {
@@ -201,12 +219,23 @@ export default function ChatPage() {
               className={`max-w-[85%] rounded-lg px-4 py-3 ${
                 msg.role === "user"
                   ? "bg-blue-600 text-white"
-                  : "border border-gray-200 bg-white text-gray-800"
+                  : msg.isError
+                    ? "border border-amber-200 bg-amber-50 text-amber-900"
+                    : "border border-gray-200 bg-white text-gray-800"
               }`}
             >
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {msg.content}
+              <div className="prose prose-sm max-w-none text-inherit [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_table]:text-xs [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_hr]:my-3">
+                {msg.role === "user" || msg.isError ? (
+                  <span className="whitespace-pre-wrap text-sm">{msg.content}</span>
+                ) : (
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                )}
               </div>
+              {msg.detail && (
+                <div className="mt-2 rounded bg-amber-100 px-2 py-1 font-mono text-[11px] text-amber-700">
+                  {msg.detail}
+                </div>
+              )}
 
               {/* Source citations */}
               {msg.sources && msg.sources.length > 0 && (
@@ -215,7 +244,19 @@ export default function ChatPage() {
                   <div className="mt-1 space-y-1">
                     {msg.sources.map((src) => (
                       <div key={src.index} className="text-xs text-gray-400">
-                        [{src.index}] {src.section_path || "Unknown source"}{" "}
+                        [{src.index}]{" "}
+                        {src.url ? (
+                          <a
+                            href={src.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 underline hover:text-blue-700"
+                          >
+                            {src.section_path || "Source"}
+                          </a>
+                        ) : (
+                          src.section_path || "Unknown source"
+                        )}{" "}
                         <span className="text-gray-300">
                           ({src.jurisdiction})
                         </span>
@@ -258,8 +299,8 @@ export default function ChatPage() {
         {loading && streamingContent && (
           <div className="flex justify-start">
             <div className="max-w-[85%] rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-800">
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {streamingContent}
+              <div className="prose prose-sm max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm">
+                <ReactMarkdown>{streamingContent}</ReactMarkdown>
                 <span className="inline-block h-4 w-1 animate-pulse bg-blue-400" />
               </div>
             </div>

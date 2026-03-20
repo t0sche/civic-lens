@@ -129,7 +129,10 @@ class TestQuestionTypeClassification:
 
     # Question type classification patterns (mirroring router.ts)
     DEFINITION_PATTERNS = [
-        re.compile(r"what\s+(does|is)\s+(a|an|the)?\s*[\"']?\w+[\"']?\s+(mean|refer\s+to|stand\s+for)", re.I),
+        re.compile(
+            r"what\s+(does|is)\s+(a|an|the)?\s*[\"']?\w+[\"']?\s+(mean|refer\s+to|stand\s+for)",
+            re.I,
+        ),
         re.compile(r"define\s+", re.I),
         re.compile(r"definition\s+of", re.I),
         re.compile(r"what\s+is\s+(a|an|the)\s+\w+\??$", re.I),
@@ -143,8 +146,14 @@ class TestQuestionTypeClassification:
     ]
 
     PROCEDURAL_PATTERNS = [
-        re.compile(r"how\s+(do|can|should)\s+I\s+(apply|file|submit|request|get|obtain|register)", re.I),
-        re.compile(r"what\s+(is|are)\s+the\s+(process|steps|procedure|requirements?)\s+(for|to)", re.I),
+        re.compile(
+            r"how\s+(do|can|should)\s+I\s+(apply|file|submit|request|get|obtain|register)",
+            re.I,
+        ),
+        re.compile(
+            r"what\s+(is|are)\s+the\s+(process|steps|procedure|requirements?)\s+(for|to)",
+            re.I,
+        ),
     ]
 
     COMPARISON_PATTERNS = [

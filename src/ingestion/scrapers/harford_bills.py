@@ -28,13 +28,13 @@ from typing import Generator
 import requests
 from bs4 import BeautifulSoup
 
+from src.lib.config import get_county_config
 from src.lib.supabase import (
     complete_ingestion_run,
     get_supabase_client,
     start_ingestion_run,
     upsert_bronze_document,
 )
-from src.lib.config import get_county_config
 
 logger = logging.getLogger(__name__)
 

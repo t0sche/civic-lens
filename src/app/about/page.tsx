@@ -102,7 +102,7 @@ export default function AboutPage() {
           CivicLens is open source under the MIT license. The architecture is
           designed to be forkable for other jurisdictions.{" "}
           <a
-            href="https://github.com/YOUR_USERNAME/civiclens"
+            href="https://github.com/t0sche/civic-lens"
             className="text-blue-600 hover:underline"
             target="_blank"
             rel="noopener noreferrer"

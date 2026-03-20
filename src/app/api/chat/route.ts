@@ -27,6 +27,7 @@ interface Source {
   source_type: string;
   similarity: number;
   data_source?: string;
+  url: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
         source_type: chunk.source_type,
         similarity: Math.round(chunk.similarity * 100) / 100,
         data_source: (chunk.metadata?.source as string) || undefined,
+        url: chunk.source_url ?? null,
       })
     );
 

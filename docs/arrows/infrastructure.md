@@ -4,7 +4,7 @@ Supabase database, Vercel deployment, GitHub Actions CI/CD, and project configur
 
 ## Status
 
-**MAPPED** - 2026-03-14. HLD defines technology choices; schemas and deployment config not yet created.
+**PARTIALLY_IMPLEMENTED** - 2026-03-19. Database schemas, CI/CD workflows, Vercel deployment, and environment config are all in place. RLS policies (INFRA-SEC-001/002/003) not yet implemented — anon key has unrestricted read access to all tables.
 
 ## References
 
@@ -42,7 +42,10 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- Supabase schema (4 migrations), GitHub Actions cron jobs, and Vercel deployment all verified in place.
+- **HIGH**: No RLS policies in any migration (001–004). The anon key has full SELECT access to all Silver and Gold tables (legislative_items, code_sections, document_chunks, ingestion_runs). INFRA-SEC-001/002/003 are not implemented.
+- **MEDIUM**: The `civic-lens.config.json` locality config system (src/lib/config.py) has no corresponding EARS specs. It is used by normalizers, embedder, and rag.ts prompt builder.
+- Next hardening step: migration 005_rls_policies.sql — enable RLS on all tables, grant anon SELECT only on legislative_items/code_sections/document_chunks, restrict ingestion_runs to service_role.
 
 ## Work Required
 

@@ -17,6 +17,12 @@ import logging
 from datetime import date
 from typing import Callable
 
+from src.lib.config import (
+    get_county_config,
+    get_municipal_config,
+    get_scraper_config,
+    get_state_config,
+)
 from src.lib.models import (
     CodeSection,
     JurisdictionLevel,
@@ -24,8 +30,8 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
-from src.lib.config import get_state_config, get_county_config, get_municipal_config, get_scraper_config
 from src.lib.supabase import get_supabase_client
+from src.pipeline.validate import validate_code_section, validate_legislative_item
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +173,7 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
     """
     Normalize a county council bill to a LegislativeItem.
 
-    @spec DATA-PIPE-030, DATA-PIPE-031
+    @spec DATA-PIPE-030
     """
     bill = json.loads(raw) if isinstance(raw, str) else raw
 
@@ -301,12 +307,14 @@ def run_normalization(source: str | None = None) -> None:
                 raw=row["raw_content"],
                 metadata=row.get("raw_metadata", {}),
             )
-            _upsert_code_section(db, section)
+            if validate_code_section(section):
+                _upsert_code_section(db, section)
 
         elif row_source in NORMALIZERS:
             normalizer = NORMALIZERS[row_source]
             item = normalizer(bronze_id=row["id"], raw=row["raw_content"])
-            _upsert_legislative_item(db, item)
+            if validate_legislative_item(item):
+                _upsert_legislative_item(db, item)
 
         else:
             logger.warning(f"No normalizer for source: {row_source}")
@@ -323,7 +331,7 @@ def _upsert_legislative_item(db, item: LegislativeItem) -> None:
 
 
 def _upsert_code_section(db, section: CodeSection) -> None:
-    """Write a CodeSection to the Silver layer."""
+    """Write a CodeSection to the Silver layer. @spec DATA-PIPE-031"""
     row = section.model_dump(mode="json")
     row.pop("id", None)
     row.pop("parent_section_id", None)  # Handle hierarchy separately

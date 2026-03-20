@@ -8,6 +8,16 @@ last_updated: 2026-03-19
 # Read this file first to understand project status and navigate.
 
 arrows:
+  ingestion-federal:
+    status: MAPPED
+    sampled: 2026-03-19
+    audited: 2026-03-19
+    blocks: [data-pipeline]
+    blockedBy: [infrastructure]
+    detail: ingestion-federal.md
+    next: "Phase 9: congress.py, usa_spending.py, govinfo.py — register api.data.gov key"
+    drift: null
+
   infrastructure:
     status: PARTIALLY_IMPLEMENTED
     sampled: 2026-03-19
@@ -19,14 +29,14 @@ arrows:
     drift: "RLS policies absent from migrations (INFRA-SEC-001/002/003 unimplemented); config raises bare KeyError on missing env vars (INFRA-ENV-003)"
 
   ingestion-apis:
-    status: PARTIALLY_IMPLEMENTED
+    status: IMPLEMENTED
     sampled: 2026-03-19
     audited: 2026-03-19
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
-    next: "Phase 9: LegiScan integration as supplementary source"
-    drift: "INGEST-API-040/041 (reject empty content/source_id) not implemented in upsert_bronze_document(); INGEST-API-007 (5xx retry with 10s delay) missing — raise_for_status() fires immediately"
+    next: "Phase 9: LegiScan scheduled CI job; ArcGIS/YouTube clients deferred"
+    drift: "legiscan.py implemented but unscheduled in CI (workflow_dispatch only); test_legiscan.py missing; arcgis.py and youtube.py referenced in docs but not yet built"
 
   ingestion-scraping:
     status: PARTIALLY_IMPLEMENTED
@@ -49,14 +59,14 @@ arrows:
     drift: null
 
   data-pipeline:
-    status: IN_PROGRESS
+    status: PARTIALLY_IMPLEMENTED
     sampled: 2026-03-19
     audited: 2026-03-19
     blocks: [embeddings, dashboard]
     blockedBy: [ingestion-apis]
     detail: data-pipeline.md
-    next: "Phase 8: Add validate.py (DATA-PIPE-040/041/042); LegiScan normalizer (Phase 9)"
-    drift: "src/pipeline/validate.py missing — DATA-PIPE-040/041/042 (Silver layer validation) not yet implemented"
+    next: "Phase 9: LegiScan normalizer; test_silver_transforms.py; LLM enrichment (DATA-PIPE-050/051)"
+    drift: "validate.py created (run 5) — DATA-PIPE-040/041/042 now implemented and integrated into run_normalization(); legiscan normalizer commented out pending Phase 9"
 
   embeddings:
     status: IMPLEMENTED
@@ -69,14 +79,14 @@ arrows:
     drift: "EMBED-GEN-002 (MiniLM) intentionally deferred — embedder raises ValueError on unsupported model; EMBED-EVAL-001/002 deferred to Phase 9"
 
   chat:
-    status: PARTIALLY_IMPLEMENTED
+    status: IMPLEMENTED
     sampled: 2026-03-19
     audited: 2026-03-19
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
-    next: "Phase 9: Cost monitoring; streaming for Vercel timeout mitigation"
-    drift: "TypeScript RAG pipeline (rag.ts, router.ts, route.ts) has no pytest coverage — gap is expected for TS/Python split architecture"
+    next: "Phase 9: Rate limiting on /api/chat; cost monitoring; Stats API EARS specs"
+    drift: "POST /api/chat has no rate limiting (API cost exposure); Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 needed); TS RAG pipeline lacks Jest test coverage"
 
   dashboard:
     status: IMPLEMENTED
