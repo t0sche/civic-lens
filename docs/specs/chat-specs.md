@@ -32,7 +32,7 @@
 - [ ] **CHAT-API-001**: The system shall accept POST requests to /api/chat with a JSON body containing a required `message` string and an optional `jurisdiction` string.
 - [ ] **CHAT-API-002**: If the message is empty or missing, then the system shall return HTTP 400 with an error message.
 - [ ] **CHAT-API-003**: If the message exceeds 2,000 characters, then the system shall return HTTP 400 with an error message.
-- [ ] **CHAT-API-004**: The system shall return a JSON response containing: answer (string), sources (array of objects with index, section_path, jurisdiction, source_type, similarity), model (string), tier (string), and routingReason (string).
+- [ ] **CHAT-API-004**: The system shall return a JSON response containing: answer (string), sources (array of objects with index, section_path, jurisdiction, source_type, similarity, url: string|null), model (string), tier (string), and routingReason (string). The url field contains the source_url from the Silver layer for direct linking to the original document.
 - [ ] **CHAT-API-005**: If any step of the RAG pipeline fails, then the system shall return HTTP 500 with a user-friendly error message and a detail field for debugging.
 
 ## Model Calls
