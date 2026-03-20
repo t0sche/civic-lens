@@ -1,5 +1,5 @@
 schema_version: 1
-last_updated: 2026-03-19
+last_updated: 2026-03-20
 # Phases 1-7 implemented and deployed as of 2026-03-17. Phase 8 starting.
 
 # Arrow of Intent Index — CivicLens
@@ -20,23 +20,23 @@ arrows:
 
   infrastructure:
     status: PARTIALLY_IMPLEMENTED
-    sampled: 2026-03-19
+    sampled: 2026-03-20
     audited: 2026-03-19
     blocks: [ingestion-apis, ingestion-scraping]
     blockedBy: []
     detail: infrastructure.md
-    next: "Phase 9 hardening: freshness indicators, cost monitoring"
-    drift: "RLS policies absent from migrations (INFRA-SEC-001/002/003 unimplemented); config raises bare KeyError on missing env vars (INFRA-ENV-003)"
+    next: "Phase 9 hardening: RLS policies (005_rls_policies.sql); freshness indicators; cost monitoring"
+    drift: "RLS policies absent from migrations (INFRA-SEC-001/002/003 unimplemented — migration 005 not yet applied); INFRA-ENV-003 resolved: config.py raises ValueError on missing required env vars"
 
   ingestion-apis:
-    status: IMPLEMENTED
-    sampled: 2026-03-19
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-20
     audited: 2026-03-19
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
-    next: "Phase 9: LegiScan scheduled CI job; ArcGIS/YouTube clients deferred"
-    drift: "legiscan.py implemented but unscheduled in CI (workflow_dispatch only); test_legiscan.py missing; arcgis.py and youtube.py referenced in docs but not yet built"
+    next: "Phase 9: MGA bulk CSV client (INGEST-API-050/054); LegiScan daily cron; ArcGIS/YouTube deferred"
+    drift: "5 active specs unimplemented (INGEST-API-050 through -054 MGA bulk CSV); legiscan.py built but unscheduled in CI; INGEST-API-060/063 (ArcGIS) formally numbered but arcgis.py deferred; test_legiscan.py missing"
 
   ingestion-scraping:
     status: PARTIALLY_IMPLEMENTED
@@ -80,13 +80,13 @@ arrows:
 
   chat:
     status: IMPLEMENTED
-    sampled: 2026-03-19
+    sampled: 2026-03-20
     audited: 2026-03-19
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
     next: "Phase 9: Rate limiting on /api/chat; cost monitoring; Stats API EARS specs"
-    drift: "POST /api/chat has no rate limiting (API cost exposure); Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 needed); TS RAG pipeline lacks Jest test coverage"
+    drift: "POST /api/chat has no rate limiting (API cost exposure); Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 needed); TS RAG pipeline lacks Jest test coverage; CHAT-API-004 Source object spec updated to include url field (implementation already ships it)"
 
   dashboard:
     status: IMPLEMENTED

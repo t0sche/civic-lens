@@ -21,7 +21,7 @@
 - [ ] **DASH-CARD-001**: Each legislative item shall display a jurisdiction badge with color coding: purple for State, teal for County, sky blue for Municipal.
 - [ ] **DASH-CARD-002**: Each legislative item shall display a status badge with color coding: green for enacted/approved/effective, blue for introduced, yellow for in-committee, indigo for passed-one-chamber, red for vetoed/rejected, amber for pending, orange for tabled, gray for expired/unknown.
 - [ ] **DASH-CARD-003**: Each legislative item shall display the source_id (bill/ordinance number) in muted text adjacent to the badges.
-- [ ] **DASH-CARD-004**: Each legislative item shall display the title, linked to the source_url (opening in a new tab) when a source_url is present.
+- [x] **DASH-CARD-004**: Each legislative item shall display the title, linked to the source_url (opening in a new tab) when a source_url is present.
 - [ ] **DASH-CARD-005**: When a legislative item has a summary, the system shall display it below the title, truncated to 2 lines.
 - [ ] **DASH-CARD-006**: Each legislative item shall display the governing body name, last_action_date, and last_action text in a metadata row.
 

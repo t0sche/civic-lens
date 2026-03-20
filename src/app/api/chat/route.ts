@@ -6,14 +6,16 @@
  *
  * Returns a streaming text response with custom headers for metadata.
  * Non-streaming fallback: JSON response with { answer, sources, model, tier, routingReason, questionType }
- *
- * @spec CHAT-API-001
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { streamText } from "ai";
 import { retrieveContext, buildPrompt, type RetrievedChunk } from "@/lib/rag";
 import { routeQuery, getModel } from "@/lib/router";
+
+// @spec CHAT-API-001, CHAT-API-002, CHAT-API-003
+
+const VALID_JURISDICTIONS = new Set(["state", "county", "local"]);
 
 interface ChatRequest {
   message: string;
@@ -48,9 +50,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate jurisdiction against known values to prevent unexpected filter behavior
+    const jurisdiction =
+      body.jurisdiction && VALID_JURISDICTIONS.has(body.jurisdiction)
+        ? body.jurisdiction
+        : undefined;
+
     // Step 1: Retrieve relevant context
     const context = await retrieveContext(body.message, {
-      jurisdiction: body.jurisdiction,
+      jurisdiction,
     });
 
     // Step 2: Route to appropriate model based on question type + retrieval signals
