@@ -81,12 +81,12 @@ arrows:
   chat:
     status: IMPLEMENTED
     sampled: 2026-03-19
-    audited: 2026-03-19
+    audited: 2026-03-20
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
-    next: "Phase 9: Rate limiting on /api/chat; cost monitoring; Stats API EARS specs"
-    drift: "POST /api/chat has no rate limiting (API cost exposure); Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 needed); TS RAG pipeline lacks Jest test coverage"
+    next: "Phase 9: Cost monitoring; Stats API EARS specs"
+    drift: "Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 needed); TS RAG pipeline lacks Jest test coverage"
 
   dashboard:
     status: IMPLEMENTED

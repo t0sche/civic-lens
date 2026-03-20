@@ -7,13 +7,14 @@
  * Returns a streaming text response with custom headers for metadata.
  * Non-streaming fallback: JSON response with { answer, sources, model, tier, routingReason, questionType }
  *
- * @spec CHAT-API-001
+ * @spec CHAT-API-001, CHAT-RLMT-001, CHAT-RLMT-002, CHAT-RLMT-003, CHAT-RLMT-004
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { streamText } from "ai";
 import { retrieveContext, buildPrompt, type RetrievedChunk } from "@/lib/rag";
 import { routeQuery, getModel } from "@/lib/router";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 interface ChatRequest {
   message: string;
@@ -45,6 +46,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Message too long (max 2000 characters)" },
         { status: 400 }
+      );
+    }
+
+    // @spec CHAT-RLMT-001 — enforce per-IP hourly request limit
+    const rateLimit = await checkRateLimit(request);
+    const rateLimitHeaders = {
+      "X-RateLimit-Limit": String(rateLimit.limit),
+      "X-RateLimit-Remaining": String(rateLimit.remaining),
+      "X-RateLimit-Reset": String(rateLimit.resetAt),
+    };
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            "Too many requests. Please wait before asking another question.",
+        },
+        {
+          status: 429,
+          headers: {
+            ...rateLimitHeaders,
+            "Retry-After": String(
+              Math.max(0, rateLimit.resetAt - Math.floor(Date.now() / 1000))
+            ),
+          },
+        }
       );
     }
 
@@ -83,6 +110,7 @@ export async function POST(request: NextRequest) {
     // Return a streaming response with metadata in custom headers
     return result.toTextStreamResponse({
       headers: {
+        ...rateLimitHeaders,
         "X-Model": routing.model,
         "X-Tier": routing.tier,
         "X-Question-Type": routing.questionType,
