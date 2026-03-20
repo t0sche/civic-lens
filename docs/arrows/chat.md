@@ -4,7 +4,7 @@ RAG-powered Q&A interface: query understanding, vector retrieval, model routing,
 
 ## Status
 
-**MAPPED** - 2026-03-14. Architecture defined in HLD; no implementation yet.
+**IMPLEMENTED** - 2026-03-20. RAG pipeline, model routing, streaming responses, citation generation, and rate limiting are live. Chat UI is functional at /chat.
 
 ## References
 
@@ -15,19 +15,19 @@ RAG-powered Q&A interface: query understanding, vector retrieval, model routing,
 - docs/llds/chat.md (created 2026-03-14)
 
 ### EARS
-- docs/specs/chat-specs.md (35 specs: 31 active, 4 deferred)
+- docs/specs/chat-specs.md (39 specs: 35 active, 4 deferred)
 
 ### Tests
-- tests/api/test_chat_routing.py
-- tests/api/test_rag_pipeline.py
-- tests/api/test_citations.py
+- tests/api/test_chat_route.py — request validation, routing, and response shape
+- tests/api/test_chat_rate_limit.py — rate limiting logic
 
 ### Code
-- src/api/chat/route.ts — Next.js API route for chat endpoint
+- src/app/api/chat/route.ts — Next.js API route for chat endpoint (with rate limiting)
 - src/lib/rag.ts — retrieval-augmented generation pipeline
 - src/lib/router.ts — model routing heuristic (free vs. frontier)
-- src/lib/citations.ts — source attribution and link generation
-- src/components/ChatInterface.tsx — chat UI component
+- src/lib/rate-limit.ts — per-IP hourly rate limiting via Supabase
+- src/app/chat/page.tsx — chat UI component
+- supabase/migrations/005_rate_limits.sql — rate_limits table and increment RPC
 
 ## Architecture
 
@@ -47,21 +47,18 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- Chat API, RAG pipeline, model routing, and streaming responses are fully implemented.
+- Rate limiting (CHAT-RLMT-001 through CHAT-RLMT-004) implemented in Phase 9 using Supabase-backed per-IP hourly counters.
+- Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 still needed).
+- TS RAG pipeline and chat UI lack Jest test coverage.
 
 ## Work Required
-
-### Must Fix
-1. RAG pipeline: query → embed → retrieve top-k chunks → construct prompt → call model → return response
-2. Model routing heuristic (keyword/intent classification for tier selection)
-3. Citation linking (map retrieved chunks to source URLs)
-4. Legal disclaimer injection on every response
-5. Chat UI component with streaming response display
 
 ### Should Fix
 1. Conversation context (multi-turn: "what about for commercial properties?" should carry forward "fence" context)
 2. "I don't know" handling — detect low retrieval confidence, admit uncertainty rather than hallucinate
-3. Jurisdiction disambiguation ("the county" vs. "the town" when both have relevant law)
+3. Stats API EARS specs (DASH-STATS-001 through 005)
+4. Jest test coverage for RAG pipeline and chat UI
 
 ### Nice to Have
 1. Query suggestion / autocomplete based on common questions

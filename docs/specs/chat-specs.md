@@ -61,3 +61,10 @@
 
 - [D] **CHAT-QUAL-001**: The system shall detect low-confidence retrieval (all chunks below 0.5 similarity) and prepend a caveat to the response indicating the answer may not directly address the question.
 - [D] **CHAT-QUAL-002**: The system shall provide a thumbs up/down feedback mechanism on each assistant response for quality tracking.
+
+## Rate Limiting
+
+- [x] **CHAT-RLMT-001**: The system shall enforce a per-IP rate limit of `CHAT_RATE_LIMIT` requests per hour (default 50) on POST /api/chat, using Supabase to track counts in fixed 1-hour windows.
+- [x] **CHAT-RLMT-002**: When the per-IP limit is exceeded, the system shall return HTTP 429 with a JSON error body and `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` response headers.
+- [x] **CHAT-RLMT-003**: All allowed responses from POST /api/chat shall include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` response headers so clients can track quota consumption.
+- [x] **CHAT-RLMT-004**: If the rate-limit database check fails for any reason (Supabase error, timeout), the system shall fail open and allow the request, logging the error without blocking the user.
