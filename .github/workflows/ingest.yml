@@ -50,6 +50,32 @@ jobs:
           OPENSTATES_API_KEY: ${{ secrets.OPENSTATES_API_KEY }}
         run: python -m src.ingestion.clients.openstates
 
+  ingest-legiscan-bills:
+    name: Ingest State Bills (LegiScan)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Run on 6-hour schedule and manual dispatch
+    if: github.event_name == 'schedule' || github.event.inputs.source == 'legiscan' || github.event.inputs.source == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run LegiScan ingestion
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LEGISCAN_API_KEY: ${{ secrets.LEGISCAN_API_KEY }}
+        run: python -m src.ingestion.clients.legiscan
+
   ingest-local-data:
     name: Ingest Local Data (Scraping)
     runs-on: ubuntu-latest
@@ -108,11 +134,11 @@ jobs:
   normalize-and-embed:
     name: Normalize + Embed
     runs-on: ubuntu-latest
-    needs: [ingest-state-bills, ingest-local-data]
+    needs: [ingest-state-bills, ingest-legiscan-bills, ingest-local-data]
     # Always run after ingestion, even if one source failed
     if: |
       always() &&
-      (needs.ingest-state-bills.result == 'success' || needs.ingest-local-data.result == 'success') &&
+      (needs.ingest-state-bills.result == 'success' || needs.ingest-legiscan-bills.result == 'success' || needs.ingest-local-data.result == 'success') &&
       github.event.inputs.skip_embeddings != 'true'
     steps:
       - uses: actions/checkout@v4
@@ -142,13 +168,14 @@ jobs:
   notify-on-failure:
     name: Alert on Failure
     runs-on: ubuntu-latest
-    needs: [ingest-state-bills, ingest-local-data, normalize-and-embed]
+    needs: [ingest-state-bills, ingest-legiscan-bills, ingest-local-data, normalize-and-embed]
     if: failure()
     steps:
       - name: Log failure
         run: |
           echo "::error::CivicLens ingestion pipeline failed. Check job logs."
-          echo "State bills: ${{ needs.ingest-state-bills.result }}"
+          echo "State bills (Open States): ${{ needs.ingest-state-bills.result }}"
+          echo "State bills (LegiScan): ${{ needs.ingest-legiscan-bills.result }}"
           echo "Local data: ${{ needs.ingest-local-data.result }}"
           echo "Normalize/embed: ${{ needs.normalize-and-embed.result }}"
         # TODO: Add email/Slack notification here
