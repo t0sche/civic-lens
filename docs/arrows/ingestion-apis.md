@@ -1,6 +1,8 @@
 # Arrow: ingestion-apis
 
-Tier 1 data collection from structured APIs: Open States, LegiScan, ArcGIS Hub, YouTube, MD Open Data Portal.
+Tier 1 data collection from structured APIs: Open States, LegiScan, MGA Bulk CSV, ArcGIS Hub, YouTube, MD Open Data Portal.
+
+**Note:** Federal APIs (Congress.gov, Census, USA Spending, etc.) are tracked in the separate `ingestion-federal` arrow. This arrow covers state and local structured APIs only.
 
 ## Status
 
@@ -59,8 +61,18 @@ See spec file in References above.
 
 ### Should Fix
 1. Deduplication between Open States and LegiScan data
-2. ArcGIS Hub client for zoning/parcel data (useful for chat context)
+2. MGA Bulk CSV/JSON ingestion — `mgaleg.maryland.gov/mgawebsite/Legislation/OpenData` — all bill metadata since 2013, no auth, updates throughout session
+3. ArcGIS Hub client for Harford County GIS (zoning, parcels, land use)
+4. Bel Air ArcGIS Hub client — `toba-data-hub-belairmd.hub.arcgis.com` — zoning, property boundaries, parks, infrastructure
 
 ### Nice to Have
 1. YouTube auto-caption extraction for meeting searchability
-2. MD Open Data Portal (SODA) client for demographic context datasets
+2. MD Open Data Portal (SODA) client for 1,000+ demographic and contextual datasets
+3. DLS RSS feeds — `dls.maryland.gov/feeds/` — lightweight alert for new legislative publications
+
+## Deprecated Sources
+
+| Source | Status | Replacement |
+|--------|--------|-------------|
+| **ProPublica Congress API** | **DEFUNCT** (GitHub archived Feb 4, 2025) | **Congress.gov API** in `ingestion-federal` arrow |
+| **Google Civic Information — Representatives** | **DEFUNCT** (April 30, 2025) | Cicero API (commercial) or OCD-ID lookups |

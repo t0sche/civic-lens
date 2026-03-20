@@ -38,3 +38,29 @@
 
 - [ ] **INGEST-API-040**: The system shall reject and skip any record where raw_content is empty or whitespace-only, logging a warning.
 - [ ] **INGEST-API-041**: The system shall reject and skip any record where source_id is empty or null, logging a warning.
+
+---
+
+## MGA Bulk CSV/JSON Client [Phase 9]
+
+**Note:** The MGA Open Data endpoint (`mgaleg.maryland.gov/mgawebsite/Legislation/OpenData`) provides all Maryland General Assembly bill metadata since 2013 — number, sponsor, synopsis, status, progress, hearing dates, committees, passage, and 79 subject categories. No API key required. This supplements Open States/LegiScan with direct-from-source data and 79-category subject tagging unavailable in third-party APIs.
+
+- [ ] **INGEST-API-050**: The system shall fetch MGA bulk CSV or JSON from `mgaleg.maryland.gov/mgawebsite/Legislation/OpenData` for the current legislative session without authentication.
+- [ ] **INGEST-API-051**: The system shall extract from each MGA bulk record: bill number, sponsor, chamber, synopsis, current status, committee assignments, hearing dates, and subject categories (up to 79 categories).
+- [ ] **INGEST-API-052**: The system shall write each MGA bulk record to `bronze_documents` with `source` set to `"mga_bulk"` and `source_id` set to the bill number.
+- [ ] **INGEST-API-053**: When an MGA bill already exists in bronze with an identical content_hash, the system shall skip the record without updating.
+- [ ] **INGEST-API-054**: The system shall use the 79 MGA subject categories stored in `raw_metadata.subjects` to improve retrieval relevance for topic-filtered queries.
+
+## ArcGIS Hub Clients [Phase 9]
+
+- [ ] **INGEST-API-060**: The system shall query the Harford County ArcGIS Hub REST API (`harford-county-gis-hub-harfordgis.hub.arcgis.com`) for parcel, zoning, and land use layers.
+- [ ] **INGEST-API-061**: The system shall query the Bel Air ArcGIS Hub REST API (`toba-data-hub-belairmd.hub.arcgis.com`) for zoning, property boundary, and public services layers.
+- [ ] **INGEST-API-062**: ArcGIS feature records shall be written to `bronze_documents` with `source` set to `"arcgis_harford"` or `"arcgis_belair"` respectively.
+- [ ] **INGEST-API-063**: ArcGIS geometry (GeoJSON) shall be stored in `raw_metadata.geometry`; spatial queries shall be possible by bounding box using the ArcGIS REST `geometry` parameter.
+
+## Deprecated Sources
+
+| Source | Status | Replacement |
+|--------|--------|-------------|
+| **ProPublica Congress API** | **DEFUNCT** (GitHub archived Feb 4, 2025) | `ingestion-federal` arrow → Congress.gov API |
+| **Google Civic Information — Representatives** | **DEFUNCT** (April 30, 2025) | Cicero API or OCD-ID lookups |

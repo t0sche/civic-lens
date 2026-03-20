@@ -28,13 +28,36 @@
 - [ ] **INGEST-SCRAPE-020**: The system shall use the content_hash column in bronze_documents to detect changes between scraping runs — if the hash of newly scraped content matches the existing hash, the record is unchanged.
 - [ ] **INGEST-SCRAPE-021**: The system shall track scraping runs in ingestion_runs with the same start/complete/fail pattern as API clients.
 
-## CivicPlus AgendaCenter (Phase 4)
+## CivicPlus RSS Feeds (Phase 9)
 
-- [D] **INGEST-SCRAPE-030**: The system shall poll CivicPlus RSS feeds at belairmd.org/rss.aspx and harfordcountymd.gov/rss.aspx for new agenda and minute entries.
-- [D] **INGEST-SCRAPE-031**: When new agenda or minute entries are detected via RSS, the system shall fetch the linked PDF document and write it to bronze_documents.
-- [D] **INGEST-SCRAPE-032**: The system shall support historical agenda retrieval from AgendaCenter pages using a headless browser to interact with the JavaScript year selection dropdown.
+- [ ] **INGEST-SCRAPE-030**: The system shall poll CivicPlus RSS feeds at `belairmd.org/rss.aspx` using the URL pattern `RSSFeed.aspx?ModID={id}&CID={cat}` covering all 11 Bel Air board/commission feeds plus Alert Center, Calendar, News Flash, and Jobs.
+- [ ] **INGEST-SCRAPE-031**: The system shall poll the Harford County RSS feed at `harfordcountymd.gov/RSS.aspx` for government news, DPW alerts, economic development, and emergency alerts.
+- [ ] **INGEST-SCRAPE-032**: When new RSS entries are detected (by comparing GUIDs against bronze_documents source_ids), the system shall write the entry to bronze_documents with source set to `"civicplus_rss_belair"` or `"civicplus_rss_harford"`.
+- [ ] **INGEST-SCRAPE-033**: The system shall store the RSS entry title, link, description, publication date, and originating board/committee in `raw_metadata`.
+- [D] **INGEST-SCRAPE-034**: When an RSS entry links to an agenda or minutes PDF, the system shall fetch and store the PDF in bronze_documents for downstream extraction by the ingestion-pdf pipeline.
+- [D] **INGEST-SCRAPE-035**: The system shall support historical agenda retrieval from AgendaCenter pages using a headless browser to interact with the JavaScript year selection dropdown.
 
 ## Harford County Bills Tracker (Phase 4)
 
 - [x] **INGEST-SCRAPE-040**: The system shall scrape the Harford County custom bills application at apps.harfordcountymd.gov/Legislation/Bills, handling ASP.NET session state and ViewState.
 - [x] **INGEST-SCRAPE-041**: For each county bill, the system shall extract: bill number, title, status, sponsors, and key dates.
+
+## Harford County Zoning Board of Appeals (Phase 9)
+
+- [ ] **INGEST-SCRAPE-045**: The system shall extend the existing harford_bills.py scraper to also retrieve ZBA cases from `hcgweb01.harfordcountymd.gov/Legislation/Zonings` using the same ASP.NET session pattern.
+- [ ] **INGEST-SCRAPE-046**: For each ZBA case, the system shall extract: case number, applicant, property address, variance type, hearing date, and decision.
+- [ ] **INGEST-SCRAPE-047**: ZBA cases shall be written to `bronze_documents` with `source` set to `"harford_zba"` and `source_id` set to the case number.
+
+---
+
+## Bel Air DocumentCenter (Phase 10) [DEFERRED]
+
+- [D] **INGEST-SCRAPE-050**: The system shall crawl the Bel Air DocumentCenter at `belairmd.org/DocumentCenter/View/{ID}/` using sequential numeric IDs to discover and download documents.
+- [D] **INGEST-SCRAPE-051**: The system shall categorize discovered documents by the 10 known categories: budgets (FY2012–2026), audits (2015–2024), capital plans, BOA minutes, Planning Commission minutes, Historic Preservation minutes, resolutions, and ordinances.
+- [D] **INGEST-SCRAPE-052**: Each discovered document shall be written to `bronze_documents` with `source` set to `"belair_documentcenter"` and `source_id` set to the numeric document ID.
+- [D] **INGEST-SCRAPE-053**: The system shall stop sequential crawling after encountering 50 consecutive 404 responses.
+
+## MD Judiciary RSS (Phase 10) [DEFERRED]
+
+- [D] **INGEST-SCRAPE-055**: The system shall poll the MD Courts RSS feed at `mdcourts.gov/rss.xml` for new appellate opinions, press releases, and judicial vacancies.
+- [D] **INGEST-SCRAPE-056**: MD Judiciary RSS entries shall be written to `bronze_documents` with `source` set to `"md_judiciary_rss"`.
