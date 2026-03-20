@@ -23,6 +23,7 @@ export interface RetrievedChunk {
   source_id: string;
   similarity: number;
   metadata: Record<string, unknown>;
+  source_url: string | null;
 }
 
 export interface RAGContext {
@@ -103,6 +104,7 @@ export async function retrieveContext(
     source_id: string;
     similarity: number;
     metadata: Record<string, unknown> | null;
+    source_url: string | null;
   };
   const chunks: RetrievedChunk[] = (data || []).map((row: RpcRow) => ({
     id: row.id,
@@ -113,6 +115,7 @@ export async function retrieveContext(
     source_id: row.source_id,
     similarity: row.similarity,
     metadata: row.metadata || {},
+    source_url: row.source_url ?? null,
   }));
 
   // Compute context metadata for model routing

@@ -20,6 +20,7 @@ interface Source {
   source_type: string;
   similarity: number;
   data_source?: string;
+  url: string | null;
 }
 
 interface Message {
@@ -243,7 +244,19 @@ export default function ChatPage() {
                   <div className="mt-1 space-y-1">
                     {msg.sources.map((src) => (
                       <div key={src.index} className="text-xs text-gray-400">
-                        [{src.index}] {src.section_path || "Unknown source"}{" "}
+                        [{src.index}]{" "}
+                        {src.url ? (
+                          <a
+                            href={src.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 underline hover:text-blue-700"
+                          >
+                            {src.section_path || "Source"}
+                          </a>
+                        ) : (
+                          src.section_path || "Unknown source"
+                        )}{" "}
                         <span className="text-gray-300">
                           ({src.jurisdiction})
                         </span>
