@@ -16,7 +16,7 @@ The pipeline executes in five sequential steps for each user query, with a total
 
 ### Step 1: Query Embedding (~500ms)
 
-The user's question is embedded using the same model that generated the document embeddings (Gemini text-embedding-004 with `taskType: RETRIEVAL_QUERY`). Using the matching task type is important — Gemini optimizes the embedding space differently for documents vs. queries.
+The user's question is embedded using the same model that generated the document embeddings (Gemini gemini-embedding-001 with `taskType: RETRIEVAL_QUERY` and `outputDimensionality: 768`). Using the matching task type is important — Gemini optimizes the embedding space differently for documents vs. queries.
 
 ### Step 2: Vector Retrieval (~100ms)
 
