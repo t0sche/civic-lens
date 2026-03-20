@@ -24,6 +24,8 @@ interface Source {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  detail?: string;
+  isError?: boolean;
   sources?: Source[];
   model?: string;
   tier?: string;
@@ -82,14 +84,22 @@ export default function ChatPage() {
         });
 
         if (!response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
+          const statusMsg =
+            response.status === 400
+              ? "Invalid request."
+              : response.status === 429
+                ? "Too many requests — please wait a moment and try again."
+                : response.status >= 500
+                  ? `Server error (HTTP ${response.status}).`
+                  : `Request failed (HTTP ${response.status}).`;
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
-              content:
-                data.error ||
-                "Sorry, something went wrong. Please try again.",
+              isError: true,
+              content: data.error || statusMsg,
+              detail: data.detail,
             },
           ]);
           return;
@@ -141,13 +151,19 @@ export default function ChatPage() {
           },
         ]);
         setStreamingContent("");
-      } catch {
+      } catch (err) {
+        const msg =
+          err instanceof TypeError
+            ? "Unable to reach the server — check your connection."
+            : err instanceof Error
+              ? err.message
+              : "An unexpected error occurred.";
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content:
-              "Unable to connect to the server. Please check your connection and try again.",
+            isError: true,
+            content: msg,
           },
         ]);
       } finally {
@@ -201,12 +217,19 @@ export default function ChatPage() {
               className={`max-w-[85%] rounded-lg px-4 py-3 ${
                 msg.role === "user"
                   ? "bg-blue-600 text-white"
-                  : "border border-gray-200 bg-white text-gray-800"
+                  : msg.isError
+                    ? "border border-amber-200 bg-amber-50 text-amber-900"
+                    : "border border-gray-200 bg-white text-gray-800"
               }`}
             >
               <div className="whitespace-pre-wrap text-sm leading-relaxed">
                 {msg.content}
               </div>
+              {msg.detail && (
+                <div className="mt-2 rounded bg-amber-100 px-2 py-1 font-mono text-[11px] text-amber-700">
+                  {msg.detail}
+                </div>
+              )}
 
               {/* Source citations */}
               {msg.sources && msg.sources.length > 0 && (
