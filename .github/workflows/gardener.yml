@@ -8,7 +8,7 @@
 # Required secrets:
 #   DEPLOY_URL        — Production Vercel URL (e.g., https://civic-lens.vercel.app)
 #   VERCEL_PROJECT_ID — Vercel project ID (for preview URL lookup via API)
-#   GITHUB_TOKEN is used for the GitHub Copilot coding agent (agentic intent auditing)
+# Note: This workflow uses the default GITHUB_TOKEN (github.token) for the GitHub Copilot coding agent (agentic intent auditing); no separate repository secret is required.
 
 name: Gardener
 
@@ -532,6 +532,14 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
       - name: Build gardener task
         id: gardener-task
         env:
