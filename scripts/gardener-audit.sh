@@ -36,25 +36,27 @@ TEST_RESULT="${GARDENER_TEST_RESULT:-unknown}"
 
 HAS_FAILURES="false"
 FAILURE_SUMMARY=""
-if [ "$LINT_RESULT" = "failure" ]; then
+# Treat any non-success result (failure, cancelled, skipped, unknown) as a signal
+# that the check needs investigation, not just explicit "failure".
+if [ "$LINT_RESULT" != "success" ]; then
   HAS_FAILURES="true"
   FAILURE_SUMMARY="${FAILURE_SUMMARY}
-- LINT FAILED: Run 'npm run lint' and 'npx tsc --noEmit' to see errors. Fix lint and type errors in src/."
+- LINT ${LINT_RESULT^^}: Run 'npm run lint' and 'npx tsc --noEmit' to see errors. Fix lint and type errors in src/."
 fi
-if [ "$PYLINT_RESULT" = "failure" ]; then
+if [ "$PYLINT_RESULT" != "success" ]; then
   HAS_FAILURES="true"
   FAILURE_SUMMARY="${FAILURE_SUMMARY}
-- PYTHON LINT FAILED: Run 'ruff check src/ tests/' to see errors. Fix ruff violations in Python code."
+- PYTHON LINT ${PYLINT_RESULT^^}: Run 'ruff check src/ tests/' to see errors. Fix ruff violations in Python code."
 fi
-if [ "$BUILD_RESULT" = "failure" ]; then
+if [ "$BUILD_RESULT" != "success" ]; then
   HAS_FAILURES="true"
   FAILURE_SUMMARY="${FAILURE_SUMMARY}
-- BUILD FAILED: Run 'npm run build' to see errors. Fix build-breaking issues in src/."
+- BUILD ${BUILD_RESULT^^}: Run 'npm run build' to see errors. Fix build-breaking issues in src/."
 fi
-if [ "$TEST_RESULT" = "failure" ]; then
+if [ "$TEST_RESULT" != "success" ]; then
   HAS_FAILURES="true"
   FAILURE_SUMMARY="${FAILURE_SUMMARY}
-- TESTS FAILED: Run 'pytest tests/ -v --tb=short' to see failures. Fix failing tests by fixing the code (not the test expectations)."
+- TESTS ${TEST_RESULT^^}: Run 'pytest tests/ -v --tb=short' to see failures. Fix failing tests by fixing the code (not the test expectations)."
 fi
 
 # ─── Output the combined audit + fix task ──────────────────────────
