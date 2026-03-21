@@ -8,7 +8,7 @@
 # Required secrets:
 #   DEPLOY_URL        — Production Vercel URL (e.g., https://civic-lens.vercel.app)
 #   VERCEL_PROJECT_ID — Vercel project ID (for preview URL lookup via API)
-#   ANTHROPIC_API_KEY — Claude API key for agentic intent auditing
+#   GITHUB_TOKEN is used for the GitHub Copilot coding agent (agentic intent auditing)
 
 name: Gardener
 
@@ -26,12 +26,7 @@ on:
         required: false
         default: 'https://civic-lens-git-dev-t0sches-projects.vercel.app/'
       run_intent_audit:
-        description: 'Run the agentic intent audit (uses Claude API credits)'
-        type: boolean
-        required: false
-        default: true
-      fix_mode:
-        description: 'Create PR with fixes when drift is found'
+        description: 'Run the agentic intent audit (uses GitHub Copilot agent)'
         type: boolean
         required: false
         default: true
@@ -528,19 +523,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Configure git identity
-        run: |
-          git config user.name "CivicLens Gardener"
-          git config user.email "gardener@civiclens.dev"
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -550,22 +532,27 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Run intent audit
+      - name: Build gardener task
+        id: gardener-task
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GARDENER_LINT_RESULT: ${{ needs.lint-and-typecheck.result }}
           GARDENER_PYLINT_RESULT: ${{ needs.python-lint.result }}
           GARDENER_BUILD_RESULT: ${{ needs.build-check.result }}
           GARDENER_TEST_RESULT: ${{ needs.python-tests.result }}
           GARDENER_E2E_RESULT: ${{ needs.smoke-and-e2e.result }}
         run: |
-          FIX_FLAG=""
-          if [ "${{ github.event.inputs.fix_mode }}" != "false" ]; then
-            FIX_FLAG="--fix"
-          fi
           chmod +x scripts/gardener-audit.sh
-          ./scripts/gardener-audit.sh $FIX_FLAG
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "task<<$EOF" >> "$GITHUB_OUTPUT"
+          ./scripts/gardener-audit.sh --task >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Run intent audit via GitHub Copilot agent
+        uses: github/copilot-coding-agent@v1
+        with:
+          task: ${{ steps.gardener-task.outputs.task }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload audit report and context
         if: always()
