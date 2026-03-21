@@ -361,17 +361,38 @@ jobs:
           fi
 
       - name: Run Playwright E2E tests
+        id: playwright
         if: steps.url.outputs.skip != 'true' && steps.health.outputs.protected != 'true'
+        shell: bash
         env:
           DEPLOY_URL: ${{ steps.url.outputs.url }}
-        run: npx playwright test --project=chromium
+        run: |
+          npx playwright test --project=chromium 2>&1 | tee playwright-output.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: Save E2E test summary
+        id: e2e-summary
+        if: always() && steps.url.outputs.skip != 'true' && steps.health.outputs.protected != 'true'
+        run: |
+          # Capture the last 60 lines of Playwright output for the intent audit
+          if [ -f playwright-output.txt ]; then
+            {
+              echo "e2e_summary<<PLAYWRIGHT_EOF"
+              tail -60 playwright-output.txt
+              echo "PLAYWRIGHT_EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "e2e_summary=No E2E output captured." >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload Playwright report
         if: always() && steps.url.outputs.skip != 'true' && steps.health.outputs.protected != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            playwright-output.txt
           retention-days: 14
 
   # ─── Security Checks ───────────────────────────────────────────────────
@@ -489,7 +510,7 @@ jobs:
   intent-audit:
     name: Agentic Intent Audit
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck, python-lint, build-check, python-tests, security-audit]
+    needs: [lint-and-typecheck, python-lint, build-check, python-tests, security-audit, smoke-and-e2e]
     # Always run after health checks (even on failure so agent can fix); skip on PRs
     if: |
       always() &&
@@ -526,6 +547,7 @@ jobs:
           GARDENER_PYLINT_RESULT: ${{ needs.python-lint.result }}
           GARDENER_BUILD_RESULT: ${{ needs.build-check.result }}
           GARDENER_TEST_RESULT: ${{ needs.python-tests.result }}
+          GARDENER_E2E_RESULT: ${{ needs.smoke-and-e2e.result }}
         run: |
           chmod +x scripts/gardener-audit.sh
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)

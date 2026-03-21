@@ -13,6 +13,7 @@
 #   GARDENER_PYLINT_RESULT  — Result of the Python lint job
 #   GARDENER_BUILD_RESULT   — Result of the Next.js build job
 #   GARDENER_TEST_RESULT    — Result of the Python test job
+#   GARDENER_E2E_RESULT     — Result of the Playwright E2E job
 
 set -euo pipefail
 
@@ -33,6 +34,7 @@ LINT_RESULT="${GARDENER_LINT_RESULT:-unknown}"
 PYLINT_RESULT="${GARDENER_PYLINT_RESULT:-unknown}"
 BUILD_RESULT="${GARDENER_BUILD_RESULT:-unknown}"
 TEST_RESULT="${GARDENER_TEST_RESULT:-unknown}"
+E2E_RESULT="${GARDENER_E2E_RESULT:-unknown}"
 
 HAS_FAILURES="false"
 FAILURE_SUMMARY=""
@@ -58,6 +60,11 @@ if [ "$TEST_RESULT" != "success" ]; then
   FAILURE_SUMMARY="${FAILURE_SUMMARY}
 - TESTS ${TEST_RESULT^^}: Run 'pytest tests/ -v --tb=short' to see failures. Fix failing tests by fixing the code (not the test expectations)."
 fi
+if [ "$E2E_RESULT" = "failure" ]; then
+  HAS_FAILURES="true"
+  FAILURE_SUMMARY="${FAILURE_SUMMARY}
+- E2E TESTS FAILED: Playwright tests against the live deployment failed. The full output is in the 'playwright-report' artifact (playwright-output.txt). Read tests/e2e/gardener.spec.ts to understand which user flows are broken. Common causes: broken navigation, chat submission not working (API error or loading indicator not clearing), missing page content, or filter UI regression. Fix the application code in src/ that is causing user-facing breakage."
+fi
 
 # ─── Output the combined audit + fix task ──────────────────────────
 cat << TASK_EOF
@@ -72,6 +79,7 @@ keeping this repository aligned with its stated design intent.
 | Python Lint (Ruff) | ${PYLINT_RESULT} |
 | Next.js Build | ${BUILD_RESULT} |
 | Python Tests | ${TEST_RESULT} |
+| E2E Browser Tests | ${E2E_RESULT} |
 $(if [ "$HAS_FAILURES" = "true" ]; then
   echo ""
   echo "FAILURES DETECTED — These must be investigated and included in your report:"
@@ -206,10 +214,14 @@ LAST, after completing your audit and writing the JSON report, also write/update
      }
    }
 
-8. Assess overall state goal achievement — Evaluate whether the project is on track
-   to deliver its stated purpose: "Plain-language access to the laws that affect you."
-   Consider: Is the data pipeline working? Is the chat functional? Is the dashboard
-   useful? What's the biggest gap between current state and ideal state?
+8. Assess overall state goal achievement and user-facing quality — Evaluate whether
+   the project is on track to deliver its stated purpose: "Plain-language access to
+   the laws that affect you." Consider:
+   - Is the data pipeline working? Is the chat functional? Is the dashboard useful?
+   - Review tests/e2e/gardener.spec.ts to understand what user flows are tested.
+   - If E2E tests failed (see health check table above), identify which user flows
+     are broken and flag them as high-severity findings in the relevant arrow.
+   - What's the biggest gap between current state and ideal state for a human user?
 
 ### Audit Rules
 
@@ -238,6 +250,15 @@ a. REPRODUCE the failure — run the failing command yourself to see the exact e
    - Python lint failed: run 'ruff check src/ tests/'
    - Build failed: run 'npx next build' (may need env vars — check .env.example)
    - Tests failed: run 'pytest tests/ -v --tb=short'
+   - E2E tests failed: the full Playwright output is in the 'playwright-report'
+     artifact (playwright-output.txt). Read tests/e2e/gardener.spec.ts to understand
+     which user flows are under test. Common failures:
+       * Chat submission: the loading indicator doesn't appear or the response
+         doesn't render — check src/app/chat/page.tsx and src/app/api/chat/route.ts
+       * Navigation: a nav link points to the wrong href — check src/app/layout.tsx
+       * Active filter not highlighted: the filter link CSS class logic is wrong
+       * About/stats page returns non-200: check src/app/about/page.tsx and
+         src/app/stats/page.tsx for runtime errors
 
 b. READ the error output carefully. Understand the root cause.
 
@@ -247,6 +268,8 @@ c. FIX the code that is causing the failure. Common patterns:
    - Ruff errors: fix Python style/import issues
    - Test failures: fix the APPLICATION CODE so tests pass (never weaken tests)
    - Build failures: fix import errors, missing dependencies, config issues
+   - E2E failures: fix the user-facing UI or API code; the E2E tests must not
+     be weakened — they define the expected user experience
 
 d. RE-RUN the command to verify your fix actually works before moving on.
 
