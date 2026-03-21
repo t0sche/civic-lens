@@ -1,39 +1,30 @@
 #!/usr/bin/env bash
-# CivicLens Gardener — Agentic Intent Audit
+# CivicLens Gardener — Task Generator for GitHub Copilot Agent
 #
-# Uses Claude Code SDK to analyze the repository against its arrows of intent,
-# detect drift between specs and implementation, and propose fixes via PR.
+# Generates the combined audit + fix task description for the GitHub Copilot
+# coding agent. The agent receives this task and autonomously audits the repo,
+# detects intent drift, fixes issues, and creates a PR if needed.
 #
 # Usage:
-#   ./scripts/gardener-audit.sh              # Audit only (prints report)
-#   ./scripts/gardener-audit.sh --fix        # Audit + create PR with fixes
+#   ./scripts/gardener-audit.sh --task    # Print task description for the agent
 #
-# Required environment:
-#   ANTHROPIC_API_KEY — Claude API key
-#
-# Optional environment:
-#   GITHUB_TOKEN — For PR creation (auto-set in GitHub Actions)
+# Required environment (for --task mode):
+#   GARDENER_LINT_RESULT    — Result of the frontend lint job
+#   GARDENER_PYLINT_RESULT  — Result of the Python lint job
+#   GARDENER_BUILD_RESULT   — Result of the Next.js build job
+#   GARDENER_TEST_RESULT    — Result of the Python test job
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FIX_MODE="${1:-}"
 DATE_STAMP="$(date -u +'%Y-%m-%d')"
-BRANCH_NAME="gardener-intent-audit-${DATE_STAMP}"
-REPORT_FILE="${REPO_ROOT}/.gardener-report.json"
-CONTEXT_FILE="${REPO_ROOT}/.gardener-context.md"
 
 cd "$REPO_ROOT"
 
-# ─── Preflight ─────────────────────────────────────────────────────
-if ! command -v claude &>/dev/null; then
-  echo "::error::Claude Code CLI not found. Install: npm install -g @anthropic-ai/claude-code"
-  exit 1
-fi
-
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "::error::ANTHROPIC_API_KEY is not set."
+if [ "${1:-}" != "--task" ]; then
+  echo "Usage: $0 --task"
+  echo "  --task    Print the audit task description for the GitHub Copilot agent"
   exit 1
 fi
 
@@ -66,12 +57,8 @@ if [ "$TEST_RESULT" = "failure" ]; then
 - TESTS FAILED: Run 'pytest tests/ -v --tb=short' to see failures. Fix failing tests by fixing the code (not the test expectations)."
 fi
 
-# ─── Write prompt files ───────────────────────────────────────────
-AUDIT_PROMPT_FILE="$(mktemp)"
-FIX_PROMPT_FILE="$(mktemp)"
-trap 'rm -f "$AUDIT_PROMPT_FILE" "$FIX_PROMPT_FILE"' EXIT
-
-cat > "$AUDIT_PROMPT_FILE" << PROMPT_EOF
+# ─── Output the combined audit + fix task ──────────────────────────
+cat << TASK_EOF
 You are the CivicLens Gardener — an autonomous maintenance agent responsible for
 keeping this repository aligned with its stated design intent.
 
@@ -83,12 +70,16 @@ keeping this repository aligned with its stated design intent.
 | Python Lint (Ruff) | ${PYLINT_RESULT} |
 | Next.js Build | ${BUILD_RESULT} |
 | Python Tests | ${TEST_RESULT} |
-$(if [ "$HAS_FAILURES" = "true" ]; then echo "
-FAILURES DETECTED — These must be investigated and included in your report:
-${FAILURE_SUMMARY}
-"; fi)
+$(if [ "$HAS_FAILURES" = "true" ]; then
+  echo ""
+  echo "FAILURES DETECTED — These must be investigated and included in your report:"
+  echo "${FAILURE_SUMMARY}"
+  echo ""
+fi)
 
-## Context Recovery (Token Optimization)
+## Phase 1 — Audit
+
+### Context Recovery (Token Optimization)
 
 FIRST, check if .gardener-context.md exists. If it does, read it — it contains
 a condensed snapshot from your last audit run: which arrows were audited, what their
@@ -113,9 +104,7 @@ LAST, after completing your audit and writing the JSON report, also write/update
 ## Files Hash (for change detection)
 (output of: git log --oneline -1 -- docs/ src/ for quick staleness check)
 
-This context file is committed to the repo so future runs can resume efficiently.
-
-## Your Mandate
+### Your Mandate
 
 1. Read the arrows of intent — Start with docs/arrows/index.yaml to understand
    the project's arrow structure, dependencies, and status. Then read each arrow
@@ -220,7 +209,7 @@ This context file is committed to the repo so future runs can resume efficiently
    Consider: Is the data pipeline working? Is the chat functional? Is the dashboard
    useful? What's the biggest gap between current state and ideal state?
 
-## Rules
+### Audit Rules
 
 - Be thorough but honest. Don't inflate findings.
 - Every finding must reference a specific spec ID or file path.
@@ -231,25 +220,9 @@ This context file is committed to the repo so future runs can resume efficiently
 - Write/update .gardener-context.md with the condensed context snapshot for next run.
 - After writing the report, print a human-readable summary to stdout.
 
-## Start
+## Phase 2 — Fix
 
-Begin by reading docs/arrows/index.yaml, then systematically audit each arrow.
-PROMPT_EOF
-
-cat > "$FIX_PROMPT_FILE" << FIX_EOF
-You are the CivicLens Gardener continuing from an audit. The audit report is at
-.gardener-report.json. Read it now.
-
-## Upstream Health Check Results
-
-| Check | Result |
-|-------|--------|
-| Frontend Lint & TypeCheck | ${LINT_RESULT} |
-| Python Lint (Ruff) | ${PYLINT_RESULT} |
-| Next.js Build | ${BUILD_RESULT} |
-| Python Tests | ${TEST_RESULT} |
-
-## Your Mandate — Fix Phase
+After completing the audit, proceed to fix issues found. Read .gardener-report.json.
 
 Priority order (fix the most critical issues first):
 
@@ -301,7 +274,7 @@ After all health checks are green (or were already passing):
    a minor gap (e.g., missing legal disclaimer, missing null check), fix it.
    Do NOT attempt large features or major refactors.
 
-## Rules
+### Fix Rules
 
 - ALWAYS fix failing health checks before addressing drift.
 - Fix the code, not the tests — if a test fails, the code is wrong.
@@ -310,146 +283,14 @@ After all health checks are green (or were already passing):
 - Never delete code or remove features.
 - After fixing health checks, re-run the command to verify the fix.
 - Limit total changes to what's reviewable in a single PR (<500 lines diff).
-- After making changes, provide a clear commit message and summary.
+- After making all changes, create a PR to the dev branch with title:
+  "Gardener: intent alignment fixes ${DATE_STAMP}"
+  Label the PR with "gardener".
 
 ## Start
 
-Read .gardener-report.json and begin making improvements. If health checks
-failed, start by reproducing and fixing those failures.
-FIX_EOF
+Begin Phase 1 by reading docs/arrows/index.yaml, then systematically audit each
+arrow. After completing the audit and writing .gardener-report.json, proceed to
+Phase 2 and fix any issues found.
+TASK_EOF
 
-# ─── Run the audit ─────────────────────────────────────────────────
-echo "Gardener: Running intent audit..."
-
-AUDIT_PROMPT="$(cat "$AUDIT_PROMPT_FILE")"
-claude -p "$AUDIT_PROMPT" \
-  --output-format text \
-  --max-turns 50 \
-  --allowedTools "Read,Glob,Grep,Write,Bash(cat:*),Bash(wc:*),Bash(find:*)" \
-  2>&1
-
-if [ ! -f "$REPORT_FILE" ]; then
-  echo "::warning::Audit completed but no report file generated."
-  exit 0
-fi
-
-echo ""
-echo "Audit report written to .gardener-report.json"
-echo ""
-
-# ─── Summarize for GitHub Actions ──────────────────────────────────
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  {
-    echo "## Gardener Intent Audit — ${DATE_STAMP}"
-    echo ""
-    python3 "${SCRIPT_DIR}/gardener-summarize.py" "$REPORT_FILE"
-  } >> "$GITHUB_STEP_SUMMARY"
-fi
-
-# ─── Fix mode: create branch and PR ───────────────────────────────
-if [ "$FIX_MODE" != "--fix" ]; then
-  echo "Audit complete. Run with --fix to create a PR with improvements."
-  exit 0
-fi
-
-echo ""
-echo "Gardener: Entering fix mode — creating improvements branch..."
-
-# Check if there's work to do (drift or health check failures)
-DRIFT_COUNT="$(python3 -c "
-import json
-r = json.load(open('$REPORT_FILE'))
-print(sum(1 for a in r.get('arrows', []) if a.get('drift_detected')))
-" 2>/dev/null || echo "0")"
-
-if [ "$DRIFT_COUNT" = "0" ] && [ "$HAS_FAILURES" = "false" ]; then
-  echo "No drift detected and all health checks passed. Nothing to fix."
-  exit 0
-fi
-
-if [ "$HAS_FAILURES" = "true" ]; then
-  echo "Health check failures detected — agent will attempt to fix them."
-fi
-if [ "$DRIFT_COUNT" != "0" ]; then
-  echo "Intent drift detected in $DRIFT_COUNT arrows."
-fi
-
-# Create branch (append short hash if name already exists)
-if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null || \
-   git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
-  SHORT_HASH="$(git rev-parse --short HEAD)"
-  BRANCH_NAME="${BRANCH_NAME}-${SHORT_HASH}"
-  echo "Branch name collision — using $BRANCH_NAME"
-fi
-git checkout -b "$BRANCH_NAME"
-
-# Run the fix agent
-FIX_PROMPT="$(cat "$FIX_PROMPT_FILE")"
-claude -p "$FIX_PROMPT" \
-  --output-format text \
-  --max-turns 50 \
-  --allowedTools "Read,Glob,Grep,Write,Edit,Bash" \
-  2>&1
-
-# Check if there are changes
-if git diff --quiet && git diff --cached --quiet; then
-  echo "Fix agent made no changes."
-  git checkout -
-  git branch -D "$BRANCH_NAME"
-  exit 0
-fi
-
-# Commit and push
-git add -A
-# GITHUB_TOKEN lacks 'workflows' permission — unstage any workflow file changes
-# to avoid a rejected push. Workflow files can be updated manually if needed.
-git restore --staged .github/workflows/ 2>/dev/null || true
-# If nothing remains staged after excluding workflows, bail out
-if git diff --cached --quiet; then
-  echo "No changes remain staged after excluding .github/workflows/. Nothing to commit."
-  git checkout -
-  git branch -D "$BRANCH_NAME"
-  exit 0
-fi
-git commit -m "chore(gardener): intent audit fixes — ${DATE_STAMP}
-
-Automated maintenance by the CivicLens Gardener agent:
-- Updated arrow drift fields and status in index.yaml
-- Added/fixed @spec annotations in source code
-- Checked off implemented specs in docs/specs/
-- Updated .gardener-context.md for next run token efficiency
-- Minor code improvements for spec compliance
-
-Co-Authored-By: CivicLens Gardener <noreply@github.com>"
-
-git push origin "$BRANCH_NAME"
-
-# Create PR
-gh pr create \
-  --title "Gardener: intent alignment fixes ${DATE_STAMP}" \
-  --body "## Gardener Intent Audit
-
-Automated PR from the CivicLens Gardener agent. This PR contains fixes
-identified during the weekly intent audit.
-
-### What the gardener checked
-- Arrow status accuracy across all arrows with detected drift
-- EARS spec coverage and @spec annotation alignment
-- Code-to-intent coherence for implemented features
-- Documentation accuracy (arrow docs, spec checklists)
-
-### Changes made
-See individual file diffs for details. All changes are low-risk documentation
-and annotation updates, with minor code fixes where specs were almost met.
-
-### Review guidance
-- Verify drift field updates in docs/arrows/index.yaml are accurate
-- Check that @spec annotations point to correct spec IDs
-- Confirm spec checkbox updates in docs/specs/ match reality
-
----
-Generated by CivicLens Gardener" \
-  --label "gardener" \
-  --base dev
-
-echo "Gardener: PR created successfully."
