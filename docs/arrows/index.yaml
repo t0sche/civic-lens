@@ -1,5 +1,5 @@
 schema_version: 1
-last_updated: 2026-03-19
+last_updated: 2026-03-30
 # Phases 1-7 implemented and deployed as of 2026-03-17. Phase 8 starting.
 
 # Arrow of Intent Index — CivicLens
@@ -30,23 +30,23 @@ arrows:
 
   ingestion-apis:
     status: IMPLEMENTED
-    sampled: 2026-03-19
-    audited: 2026-03-19
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
     next: "Phase 9: LegiScan scheduled CI job; ArcGIS/YouTube clients deferred"
-    drift: "legiscan.py implemented but unscheduled in CI (workflow_dispatch only); test_legiscan.py missing; arcgis.py and youtube.py referenced in docs but not yet built"
+    drift: "legiscan.py implemented but unscheduled in CI (workflow_dispatch only); test_legiscan.py missing; INGEST-API-050-063 (MGA/ArcGIS) are Phase 9 items, not yet built; spec file updated with [x] for 001-041"
 
   ingestion-scraping:
     status: PARTIALLY_IMPLEMENTED
-    sampled: 2026-03-19
-    audited: 2026-03-19
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
-    next: "Phase 8: run ecode360 with HA0904; civicplus_agenda.py deferred to Phase 8+"
-    drift: "civicplus_agenda.py is deferred (Phase 8+); harford_bills.py is fully implemented; INGEST-SCRAPE-040/041 spec updated from [D] to [x]"
+    next: "Phase 9: civicplus RSS feeds (030-033); ZBA scraper (045-047); test_ecode360.py and test_belair_legislation.py missing"
+    drift: "INGEST-SCRAPE-001-021 implemented (ecode360, belair_legislation, change detection) — spec file updated [x]; 030-033 RSS and 045-047 ZBA are Phase 9 (not yet built); civicplus_agenda.py stub references now-RSS specs 030-032"
 
   ingestion-pdf:
     status: DEFERRED
@@ -70,33 +70,33 @@ arrows:
 
   embeddings:
     status: IMPLEMENTED
-    sampled: 2026-03-19
-    audited: 2026-03-19
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: [chat]
     blockedBy: [data-pipeline]
     detail: embeddings.md
     next: "Phase 9: Retrieval quality evaluation (20-question test set, recall@8)"
-    drift: "EMBED-GEN-002 (MiniLM) intentionally deferred — embedder raises ValueError on unsupported model; EMBED-EVAL-001/002 deferred to Phase 9"
+    drift: "embeddings.md arrow detail file updated (was showing MAPPED/UNMAPPED); EMBED-GEN-002 (MiniLM) intentionally deferred — embedder raises ValueError on unsupported model; EMBED-EVAL-001/002 deferred to Phase 9"
 
   chat:
     status: IMPLEMENTED
-    sampled: 2026-03-19
-    audited: 2026-03-19
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
     next: "Phase 9: Rate limiting on /api/chat; cost monitoring; Stats API EARS specs"
-    drift: "POST /api/chat has no rate limiting (API cost exposure); Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 needed); TS RAG pipeline lacks Jest test coverage"
+    drift: "chat.md arrow detail file updated (was showing MAPPED/UNMAPPED); chat-specs.md updated [x] for all 27 active specs; POST /api/chat still has no rate limiting (API cost exposure); Stats API shipped without EARS specs (DASH-STATS-001 through 005 needed)"
 
   dashboard:
     status: IMPLEMENTED
-    sampled: 2026-03-19
-    audited: 2026-03-19
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: []
     blockedBy: [data-pipeline]
     detail: dashboard.md
-    next: "Phase 9: Freshness indicators per source"
-    drift: null
+    next: "Phase 9: Freshness indicators per source; DASH-STATS specs needed for Stats API"
+    drift: "dashboard-specs.md updated [x] for all 20 active specs; Stats API (/api/stats) shipped without EARS specs — DASH-STATS-001 through 005 to be written in Phase 9"
 
 unmapped:
   # Nothing unmapped — all domains identified in HLD are tracked above.

@@ -41,7 +41,7 @@ import json
 import logging
 import re
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -532,7 +532,9 @@ def main(argv: list[str] | None = None) -> int:
             db = get_supabase_client()
             run_id = start_ingestion_run(db, SOURCE_NAME)
         except Exception as e:
-            logger.warning(f"Could not start ingestion run tracker: {e}. Continuing without tracking.")
+            logger.warning(
+                f"Could not start ingestion run tracker: {e}. Continuing without tracking."
+            )
 
     # Process each PDF
     results = []
