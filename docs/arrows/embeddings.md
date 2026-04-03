@@ -4,7 +4,7 @@ Section-aware document chunking, embedding generation, and pgvector storage for 
 
 ## Status
 
-**MAPPED** - 2026-03-14. Chunking strategy outlined in HLD D4; implementation not yet started.
+**IMPLEMENTED** - 2026-03-19. Section-aware chunker, embedding generation pipeline, and pgvector retrieval all shipped in Phases 5–7.
 
 ## References
 
@@ -42,21 +42,14 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- `src/pipeline/chunker.py` — section-aware chunker using BeautifulSoup to split eCode360 HTML at chapter/section/subsection boundaries; preserves breadcrumb hierarchy in metadata
+- `src/pipeline/embedder.py` — generates embeddings via Gemini `text-embedding-004` with `RETRIEVAL_DOCUMENT` task type; upserts vectors to `document_chunks` via Supabase RPC; raises `ValueError` for unsupported model names (MiniLM intentionally deferred per EMBED-GEN-002)
+- `src/lib/vector_search.py` — calls `match_document_chunks` Postgres RPC; supports jurisdiction and source_type filters; returns top-k chunks with similarity scores
+- All 19 active specs (EMBED-CHUNK through EMBED-SEARCH) verified implemented; EMBED-GEN-002 (MiniLM) and EMBED-EVAL-001/002 deferred to Phase 9
 
 ## Work Required
 
-### Must Fix
-1. Section-aware chunker for eCode360 HTML (chapter → section → subsection boundaries)
-2. Chunker for legislative text (bill articles, sections)
-3. Embedding generation pipeline (run during ingestion, not at query time)
-4. pgvector similarity search with metadata filtering (jurisdiction, source_type)
-
-### Should Fix
-1. Sub-chunking strategy for oversized sections (>2000 tokens) with overlap
-2. Hierarchical breadcrumb preservation ("Town Code > Ch. 165 > §165-23 > (b)(3)")
-3. Embedding model comparison (MiniLM vs. Gemini vs. legal-domain model)
-
-### Nice to Have
-1. Hybrid search (vector similarity + full-text keyword search via Postgres tsvector)
-2. Re-embedding triggered by Silver layer changes (not full re-index)
+### Phase 9
+1. Retrieval quality evaluation: 20-question test set, recall@8 metric (EMBED-EVAL-001/002)
+2. MiniLM fallback embedding model (EMBED-GEN-002)
+3. Hybrid search (vector + tsvector full-text, EMBED-SEARCH-003 deferred)

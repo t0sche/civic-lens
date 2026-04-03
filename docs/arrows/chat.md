@@ -4,7 +4,7 @@ RAG-powered Q&A interface: query understanding, vector retrieval, model routing,
 
 ## Status
 
-**IMPLEMENTED** - 2026-03-20. RAG pipeline, model routing, streaming responses, citation generation, and rate limiting are live. Chat UI is functional at /chat.
+**IMPLEMENTED** - 2026-03-19. Full RAG pipeline, model routing, citation generation, legal disclaimers, and chat UI all shipped in Phases 5–7.
 
 ## References
 
@@ -47,20 +47,17 @@ See spec file in References above.
 
 ## Key Findings
 
-- Chat API, RAG pipeline, model routing, and streaming responses are fully implemented.
-- Rate limiting (CHAT-RLMT-001 through CHAT-RLMT-004) implemented in Phase 9 using Supabase-backed per-IP hourly counters.
-- Stats API and Stats page shipped without EARS specs (DASH-STATS-001 through 005 still needed).
-- TS RAG pipeline and chat UI lack Jest test coverage.
+- `src/app/api/chat/route.ts` — POST /api/chat; validates message (empty/length); calls RAG pipeline; returns JSON with answer, sources, model, tier, routingReason
+- `src/lib/rag.ts` — full RAG pipeline: embeds query via Gemini, retrieves top-k chunks via `match_document_chunks`, builds system prompt with numbered sources and legal disclaimer, routes to Claude Sonnet or Gemini Flash
+- `src/lib/router.ts` — routes to frontier model when chunks span ≥3 source docs, multiple jurisdictions, or query matches complexity signal patterns
+- `src/lib/citations.ts` — maps retrieved chunks to source URLs for clickable citations
+- `src/components/ChatInterface.tsx` — chat UI with example questions, loading indicator, source citations, model tier badge, and legal disclaimer
+- All 27 active specs (CHAT-RAG through CHAT-UI) verified implemented; multi-turn context (CHAT-CTX) and quality safeguards (CHAT-QUAL) deferred
+- **Security gap**: POST /api/chat has no rate limiting; endpoint calls Claude Sonnet (paid) on every request — trivial API cost abuse possible
 
 ## Work Required
 
-### Should Fix
-1. Conversation context (multi-turn: "what about for commercial properties?" should carry forward "fence" context)
-2. "I don't know" handling — detect low retrieval confidence, admit uncertainty rather than hallucinate
-3. Stats API EARS specs (DASH-STATS-001 through 005)
-4. Jest test coverage for RAG pipeline and chat UI
-
-### Nice to Have
-1. Query suggestion / autocomplete based on common questions
-2. Feedback mechanism (thumbs up/down on responses for quality tracking)
-3. Response caching for repeated common questions
+### Phase 9
+1. Rate limiting on /api/chat (Upstash or Vercel Edge middleware — 10 req/min/IP)
+2. EARS specs for Stats API: DASH-STATS-001 through 005 (GET /api/stats contract)
+3. Jest test coverage for rag.ts pipeline (test_rag_pipeline.py placeholder listed in References but not created)
