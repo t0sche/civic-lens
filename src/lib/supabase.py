@@ -7,6 +7,7 @@ Provides typed helpers for Bronze/Silver/Gold layer operations.
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -73,6 +74,12 @@ def upsert_bronze_document(
         raise ValueError("raw_content must not be empty")
     if not source_id.strip():
         raise ValueError("source_id must not be empty")
+
+    # PostgreSQL cannot store \u0000 in text columns (error 22P05).
+    # Strip null bytes from all string content before upserting.
+    raw_content = raw_content.replace("\x00", "")
+    if raw_metadata:
+        raw_metadata = json.loads(json.dumps(raw_metadata).replace("\\u0000", ""))
 
     new_hash = content_hash(raw_content)
 
