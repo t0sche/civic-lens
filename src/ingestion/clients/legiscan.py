@@ -197,8 +197,47 @@ class LegiScanClient:
 
     # ─── Hash-Based Change Detection ──────────────────────────────────
 
-    def _get_stored_hashes(self, hash_type: str) -> dict[str, str]:
-        """Load stored hashes (change_hash or dataset_hash) from cache."""
+    def _get_stored_change_hashes(self, db) -> dict[str, str]:
+        """Load change_hash values from bronze_documents (persists across CI runs)."""
+        result = (
+            db.table("bronze_documents")
+            .select("source_id,legiscan_change_hash")
+            .eq("source", "legiscan")
+            .not_.is_("legiscan_change_hash", "null")
+            .execute()
+        )
+        return {
+            row["source_id"]: row["legiscan_change_hash"]
+            for row in (result.data or [])
+        }
+
+    def _save_change_hash(self, db, bill_id: str, change_hash: str) -> None:
+        """Persist a bill's change_hash to bronze_documents."""
+        db.table("bronze_documents").update(
+            {"legiscan_change_hash": change_hash}
+        ).eq("source", "legiscan").eq("source_id", bill_id).execute()
+
+    def _get_stored_dataset_hashes(self, db) -> dict[str, str]:
+        """Load dataset_hash values from legiscan_dataset_hashes table."""
+        result = db.table("legiscan_dataset_hashes").select("session_id,dataset_hash").execute()
+        return {
+            str(row["session_id"]): row["dataset_hash"]
+            for row in (result.data or [])
+        }
+
+    def _save_dataset_hash(self, db, session_id: int, dataset_hash: str, dataset_id: int | None) -> None:
+        """Persist a session's dataset_hash to legiscan_dataset_hashes."""
+        db.table("legiscan_dataset_hashes").upsert({
+            "session_id": session_id,
+            "dataset_hash": dataset_hash,
+            "dataset_id": dataset_id,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="session_id").execute()
+
+    # ─── Local Cache Fallback (dev without DB) ─────────────────────────
+
+    def _get_stored_hashes_from_cache(self, hash_type: str) -> dict[str, str]:
+        """Load stored hashes from local JSON cache (fallback for local dev)."""
         hash_file = self._cache_dir / f"{hash_type}_hashes.json"
         if hash_file.exists():
             try:
@@ -206,11 +245,6 @@ class LegiScanClient:
             except (json.JSONDecodeError, OSError):
                 return {}
         return {}
-
-    def _save_stored_hashes(self, hash_type: str, hashes: dict[str, str]) -> None:
-        """Persist hashes to disk for future comparison."""
-        hash_file = self._cache_dir / f"{hash_type}_hashes.json"
-        hash_file.write_text(json.dumps(hashes))
 
     # ─── Public API Methods ───────────────────────────────────────────
 
@@ -297,20 +331,24 @@ class LegiScanClient:
 
     # ─── Smart Ingestion with Hash Comparison ─────────────────────────
 
-    def get_changed_bills(self, session_id: int) -> list[int]:
+    def get_changed_bills(self, session_id: int, db=None) -> list[int]:
         """
         Use getMasterListRaw to detect which bills have changed since
         last fetch, by comparing change_hash values.
 
         Returns list of bill_ids that need to be re-fetched.
 
-        This is the recommended LegiScan work loop pattern:
-        check getMasterListRaw periodically → compare change_hash →
-        only spend queries on bills that have actually changed.
+        When db is provided, reads/writes hashes from the database
+        (persists across CI runs). Falls back to local cache files
+        for local development without a DB connection.
         """
         raw_list = self.get_master_list_raw(session_id)
-        stored_hashes = self._get_stored_hashes("change")
+        if db is not None:
+            stored_hashes = self._get_stored_change_hashes(db)
+        else:
+            stored_hashes = self._get_stored_hashes_from_cache("change")
         changed_bill_ids = []
+        updated_hashes: dict[str, str] = {}
 
         for key, entry in raw_list.items():
             if key == "session":
@@ -324,10 +362,7 @@ class LegiScanClient:
             # Compare with stored hash — only fetch if hash differs
             if stored_hashes.get(bill_id) != change_hash:
                 changed_bill_ids.append(int(bill_id))
-                stored_hashes[bill_id] = change_hash
-
-        # Save updated hashes
-        self._save_stored_hashes("change", stored_hashes)
+                updated_hashes[bill_id] = change_hash
 
         logger.info(
             "change_hash comparison: %d/%d bills changed since last check",
@@ -336,7 +371,7 @@ class LegiScanClient:
         )
         return changed_bill_ids
 
-    def check_dataset_changed(self, session_id: int) -> tuple[bool, int | None]:
+    def check_dataset_changed(self, session_id: int, db=None) -> tuple[bool, int | None]:
         """
         Check if the session dataset has changed by comparing dataset_hash.
 
@@ -351,7 +386,11 @@ class LegiScanClient:
         dataset_hash = latest.get("dataset_hash", "")
         session_key = str(session_id)
 
-        stored_hashes = self._get_stored_hashes("dataset")
+        if db is not None:
+            stored_hashes = self._get_stored_dataset_hashes(db)
+        else:
+            stored_hashes = self._get_stored_hashes_from_cache("dataset")
+
         if stored_hashes.get(session_key) == dataset_hash:
             logger.info(
                 "dataset_hash unchanged for session %s — skipping download",
@@ -359,9 +398,9 @@ class LegiScanClient:
             )
             return False, dataset_id
 
-        # Update stored hash
-        stored_hashes[session_key] = dataset_hash
-        self._save_stored_hashes("dataset", stored_hashes)
+        # Persist updated hash to DB if available
+        if db is not None:
+            self._save_dataset_hash(db, session_id, dataset_hash, dataset_id)
         return True, dataset_id
 
 
@@ -428,7 +467,7 @@ def ingest_legiscan_bills(session_id: int | None = None) -> None:
             logger.info(f"Using most recent session: {sessions[0].get('session_name', session_id)}")
 
         # Use change_hash to find only bills that have changed
-        changed_bill_ids = client.get_changed_bills(session_id)
+        changed_bill_ids = client.get_changed_bills(session_id, db=db)
 
         if not changed_bill_ids:
             logger.info("No bills changed since last check — skipping ingestion")
@@ -466,6 +505,10 @@ def ingest_legiscan_bills(session_id: int | None = None) -> None:
                 raw_metadata=raw_metadata,
                 url=bill_detail.get("url"),
             )
+            # Persist change_hash to DB so it survives CI ephemeral environments
+            change_hash = bill_detail.get("change_hash", "")
+            if change_hash:
+                client._save_change_hash(db, str(bill_id), change_hash)
             fetched += 1
             logger.info(f"Ingested LegiScan bill {bill_detail.get('bill_number', bill_id)}")
 
