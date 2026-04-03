@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "ai";
 import { createServerClient } from "@/lib/supabase-client";
+import { retrieveContext } from "@/lib/rag";
 import { getModel } from "@/lib/router";
 
 interface Citation {
@@ -60,35 +61,66 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
   }
 
-  // Gather source text for the LLM — fetch chunks in parallel with bronze processing
+  // Gather source text for the LLM
   const sourceTexts: { label: string; text: string }[] = [];
   const MAX_CONTEXT_CHARS = 20000;
   let totalChars = 0;
 
-  // Fetch document chunks in parallel while processing bronze content
+  // Launch parallel fetches: direct chunks + source URL content (if needed)
   const chunksPromise = db
     .from("document_chunks")
     .select("chunk_text, section_path, metadata")
     .eq("source_id", id)
     .order("chunk_index", { ascending: true });
 
-  // 1. Bronze raw content (the original document)
-  if (item.bronze_documents?.raw_content) {
-    const raw = item.bronze_documents.raw_content;
-    const cleanText = raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-    if (cleanText.length > 100) {
-      const text = cleanText.slice(0, 12000);
-      sourceTexts.push({
-        label: `Original document: ${item.source_id}`,
-        text,
-      });
-      totalChars += text.length;
-    }
+  // Also kick off a vector search using the title as query for related context
+  const ragPromise = retrieveContext(item.title, {
+    topK: 6,
+    jurisdiction: item.jurisdiction,
+  });
+
+  // Check for full text in bronze metadata (LegiScan/Harford/OpenStates pattern)
+  const bronzeMeta = (item.bronze_documents?.raw_metadata ?? {}) as Record<string, unknown>;
+  const hasMetadataFullText = bronzeMeta.full_text_extracted && typeof bronzeMeta.full_text === "string";
+
+  // Try fetching source_url content when bronze is thin and no metadata full text
+  const bronzeText = extractBronzeText(item.bronze_documents?.raw_content);
+  const sourceUrlPromise =
+    !hasMetadataFullText && bronzeText.length < 500 && item.source_url
+      ? fetchSourceContent(item.source_url)
+      : Promise.resolve(null);
+
+  // 1. Bronze raw content — check raw_metadata.full_text first,
+  //    then fall back to extracted bronze text (Belair PDF pattern)
+  if (hasMetadataFullText) {
+    const text = (bronzeMeta.full_text as string).slice(0, 12000);
+    sourceTexts.push({
+      label: `Original document: ${item.source_id}`,
+      text,
+    });
+    totalChars += text.length;
+  } else if (bronzeText.length > 100) {
+    const text = bronzeText.slice(0, 12000);
+    sourceTexts.push({
+      label: `Original document: ${item.source_id}`,
+      text,
+    });
+    totalChars += text.length;
   }
 
-  // 2. Document chunks linked to this item
-  const { data: chunks } = await chunksPromise;
+  // 2. Source URL content (when bronze was thin)
+  const sourceUrlContent = await sourceUrlPromise;
+  if (sourceUrlContent && totalChars < MAX_CONTEXT_CHARS) {
+    const text = sourceUrlContent.slice(0, 12000);
+    sourceTexts.push({
+      label: `Fetched from source: ${item.source_id}`,
+      text,
+    });
+    totalChars += text.length;
+  }
 
+  // 3. Document chunks linked to this item
+  const { data: chunks } = await chunksPromise;
   if (chunks) {
     for (const chunk of chunks) {
       if (totalChars >= MAX_CONTEXT_CHARS) break;
@@ -101,29 +133,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  // 3. Related chunks via raw_metadata keywords (if bronze content was thin)
-  if (sourceTexts.length <= 1 && item.bronze_documents?.raw_metadata) {
-    const meta = item.bronze_documents.raw_metadata;
-    const subjects = (meta.subjects || meta.keywords || []) as string[];
-    if (subjects.length > 0) {
-      const { data: relatedChunks } = await db
-        .from("document_chunks")
-        .select("chunk_text, section_path")
-        .eq("jurisdiction", item.jurisdiction)
-        .neq("source_id", id)
-        .limit(5);
-
-      if (relatedChunks) {
-        for (const chunk of relatedChunks) {
-          if (totalChars >= MAX_CONTEXT_CHARS) break;
-          const text = chunk.chunk_text.slice(0, 4000);
-          sourceTexts.push({
-            label: chunk.section_path || "Related law",
-            text,
-          });
-          totalChars += text.length;
-        }
-      }
+  // 4. RAG-retrieved related context (code sections, related legislation)
+  const ragContext = await ragPromise;
+  if (ragContext.chunks.length > 0 && totalChars < MAX_CONTEXT_CHARS) {
+    for (const chunk of ragContext.chunks) {
+      if (totalChars >= MAX_CONTEXT_CHARS) break;
+      // Skip chunks that are just the item's own title+summary (already have that)
+      if (chunk.source_id === id) continue;
+      const text = chunk.chunk_text.slice(0, 4000);
+      sourceTexts.push({
+        label: chunk.section_path || `Related: ${chunk.source_type} (${chunk.jurisdiction})`,
+        text,
+      });
+      totalChars += text.length;
     }
   }
 
@@ -239,5 +261,72 @@ ${contextBlock}`;
       },
       { status: 500 }
     );
+  }
+}
+
+/** Extract usable text from bronze raw_content (may be HTML, JSON, or plain text). */
+function extractBronzeText(rawContent: string | null | undefined): string {
+  if (!rawContent) return "";
+  // If it looks like JSON (from belair_legislation scraper), parse and extract title
+  if (rawContent.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(rawContent);
+      return [parsed.title, parsed.number, parsed.status]
+        .filter(Boolean)
+        .join(" — ");
+    } catch {
+      // fall through to HTML/text handling
+    }
+  }
+  // Strip HTML tags
+  return rawContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Fetch text content from a source URL. Returns null on failure or for PDFs. */
+async function fetchSourceContent(url: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "CivicLens/1.0 (civic transparency tool)",
+        Accept: "text/html, text/plain, application/xhtml+xml",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") || "";
+
+    // Can't parse PDFs without a library — skip
+    if (contentType.includes("application/pdf")) return null;
+
+    // For HTML/text responses, extract text
+    if (
+      contentType.includes("text/html") ||
+      contentType.includes("text/plain") ||
+      contentType.includes("application/xhtml")
+    ) {
+      const html = await res.text();
+      // Extract body content, strip tags, collapse whitespace
+      const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      const content = bodyMatch ? bodyMatch[1] : html;
+      // Remove script/style blocks first
+      const cleaned = content
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      // Only return if we got meaningful content (not just nav/footer boilerplate)
+      return cleaned.length > 200 ? cleaned : null;
+    }
+
+    return null;
+  } catch {
+    return null;
   }
 }
