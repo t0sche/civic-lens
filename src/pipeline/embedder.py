@@ -240,19 +240,29 @@ def _legitem_source_text(item: dict) -> str:
     parts = [item["title"]]
     if item.get("summary"):
         parts.append(item["summary"])
-    # Include bronze full text in hash so re-ingested PDFs trigger re-embedding
+    # Include bronze full text in hash so re-ingested content triggers re-embedding
     bronze = item.get("bronze_documents") or {}
-    if bronze.get("raw_metadata", {}).get("pdf_extracted") and bronze.get("raw_content"):
+    meta = bronze.get("raw_metadata") or {}
+    if meta.get("pdf_extracted") and bronze.get("raw_content"):
         parts.append(bronze["raw_content"][:500])
+    elif meta.get("full_text_extracted") and meta.get("full_text"):
+        parts.append(meta["full_text"][:500])
     return "\n\n".join(parts)
 
 
 def _get_bronze_full_text(item: dict) -> str | None:
-    """Extract full document text from bronze layer if PDF was extracted."""
+    """Extract full document text from bronze layer.
+
+    Handles two storage patterns:
+    - Belair (PDF): raw_content IS the extracted text, flagged by pdf_extracted
+    - Other sources: full text stored in raw_metadata.full_text, flagged by full_text_extracted
+    """
     bronze = item.get("bronze_documents") or {}
     meta = bronze.get("raw_metadata") or {}
     if meta.get("pdf_extracted") and bronze.get("raw_content"):
         return bronze["raw_content"]
+    if meta.get("full_text_extracted") and meta.get("full_text"):
+        return meta["full_text"]
     return None
 
 

@@ -79,15 +79,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     jurisdiction: item.jurisdiction,
   });
 
-  // Try fetching source_url content when bronze is thin (common for municipal PDFs/HTML)
+  // Check for full text in bronze metadata (LegiScan/Harford/OpenStates pattern)
+  const bronzeMeta = (item.bronze_documents?.raw_metadata ?? {}) as Record<string, unknown>;
+  const hasMetadataFullText = bronzeMeta.full_text_extracted && typeof bronzeMeta.full_text === "string";
+
+  // Try fetching source_url content when bronze is thin and no metadata full text
   const bronzeText = extractBronzeText(item.bronze_documents?.raw_content);
   const sourceUrlPromise =
-    bronzeText.length < 500 && item.source_url
+    !hasMetadataFullText && bronzeText.length < 500 && item.source_url
       ? fetchSourceContent(item.source_url)
       : Promise.resolve(null);
 
-  // 1. Bronze raw content
-  if (bronzeText.length > 100) {
+  // 1. Bronze raw content — check raw_metadata.full_text first,
+  //    then fall back to extracted bronze text (Belair PDF pattern)
+  if (hasMetadataFullText) {
+    const text = (bronzeMeta.full_text as string).slice(0, 12000);
+    sourceTexts.push({
+      label: `Original document: ${item.source_id}`,
+      text,
+    });
+    totalChars += text.length;
+  } else if (bronzeText.length > 100) {
     const text = bronzeText.slice(0, 12000);
     sourceTexts.push({
       label: `Original document: ${item.source_id}`,

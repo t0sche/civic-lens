@@ -20,6 +20,7 @@ Compliance with LegiScan API terms:
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from bs4 import BeautifulSoup
 
 from src.lib.config import get_config, get_state_config
 from src.lib.supabase import (
@@ -363,6 +365,44 @@ class LegiScanClient:
         return True, dataset_id
 
 
+def _fetch_legiscan_bill_text(client: LegiScanClient, bill_detail: dict) -> str | None:
+    """
+    Fetch and decode full bill text from LegiScan API.
+
+    Uses the most recent text document from the bill's texts array.
+    Each call costs 1 API query against the monthly budget.
+    """
+    texts = bill_detail.get("texts", [])
+    if not texts:
+        return None
+
+    # Get the most recent text document (last in list)
+    latest_text = texts[-1]
+    doc_id = latest_text.get("doc_id")
+    if not doc_id:
+        return None
+
+    try:
+        text_data = client.get_bill_text(doc_id)
+        encoded = text_data.get("doc", "")
+        if not encoded:
+            return None
+
+        decoded_bytes = base64.b64decode(encoded)
+        mime = text_data.get("mime", "text/html")
+
+        if "html" in mime:
+            soup = BeautifulSoup(decoded_bytes, "lxml")
+            return soup.get_text(separator="\n\n").strip()
+        else:
+            return decoded_bytes.decode("utf-8", errors="replace").strip()
+
+    except Exception as e:
+        bill_num = bill_detail.get("bill_number", "unknown")
+        logger.warning(f"Failed to fetch bill text for {bill_num} (doc_id={doc_id}): {e}")
+        return None
+
+
 def ingest_legiscan_bills(session_id: int | None = None) -> None:
     """
     Ingest state bills from LegiScan into the Bronze layer.
@@ -403,19 +443,27 @@ def ingest_legiscan_bills(session_id: int | None = None) -> None:
             bill_detail = client.get_bill(bill_id)
             raw_content = json.dumps(bill_detail, default=str)
 
+            # Fetch full bill text if available (costs 1 API query per bill)
+            full_text = _fetch_legiscan_bill_text(client, bill_detail)
+
+            raw_metadata = {
+                "bill_number": bill_detail.get("bill_number", ""),
+                "session_id": session_id,
+                "state": _STATE_ABBREV,
+                "change_hash": bill_detail.get("change_hash", ""),
+                "legiscan_attribution": "Data provided by LegiScan (CC BY 4.0)",
+            }
+            if full_text:
+                raw_metadata["full_text_extracted"] = True
+                raw_metadata["full_text"] = full_text[:100_000]
+
             upsert_bronze_document(
                 db,
                 source="legiscan",
                 source_id=str(bill_id),
                 document_type="bill",
                 raw_content=raw_content,
-                raw_metadata={
-                    "bill_number": bill_detail.get("bill_number", ""),
-                    "session_id": session_id,
-                    "state": _STATE_ABBREV,
-                    "change_hash": bill_detail.get("change_hash", ""),
-                    "legiscan_attribution": "Data provided by LegiScan (CC BY 4.0)",
-                },
+                raw_metadata=raw_metadata,
                 url=bill_detail.get("url"),
             )
             fetched += 1
