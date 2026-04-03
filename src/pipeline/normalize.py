@@ -30,7 +30,12 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
-from src.lib.supabase import fetch_all_rows, get_supabase_client
+from src.lib.supabase import (
+    complete_ingestion_run,
+    fetch_all_rows,
+    get_supabase_client,
+    start_ingestion_run,
+)
 from src.pipeline.validate import validate_code_section, validate_legislative_item
 
 logger = logging.getLogger(__name__)
@@ -351,42 +356,73 @@ def run_normalization(source: str | None = None) -> None:
     """
     db = get_supabase_client()
 
-    # Query Bronze records that need normalization
+    # Only process Bronze records fetched/updated since the last successful
+    # normalization run, rather than re-normalizing everything each time.
+    last_run = (
+        db.table("ingestion_runs")
+        .select("completed_at")
+        .eq("source", "normalize")
+        .eq("status", "success")
+        .order("completed_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    since = last_run.data[0]["completed_at"] if last_run.data else None
+
     query = db.table("bronze_documents").select("*")
     if source:
         query = query.eq("source", source)
+    if since:
+        query = query.gt("fetched_at", since)
 
-    # TODO: Track which Bronze records have been normalized to avoid reprocessing.
-    # For MVP, re-normalize everything on each run (idempotent via upsert).
     all_rows = fetch_all_rows(query)
 
     if not all_rows:
         logger.info(f"No Bronze records to normalize for source={source or 'all'}")
         return
 
-    logger.info(f"Normalizing {len(all_rows)} Bronze records")
+    run_id = start_ingestion_run(db, "normalize")
+    logger.info(
+        f"Normalizing {len(all_rows)} Bronze records"
+        + (f" (since {since})" if since else " (full run)")
+    )
 
-    for row in all_rows:
-        row_source = row["source"]
+    try:
+        normalized = 0
+        for row in all_rows:
+            row_source = row["source"]
 
-        if row_source in ("ecode360_belair", "ecode360_harford"):
-            # Code sections use a different normalization path
-            section = normalize_ecode360_section(
-                bronze_id=row["id"],
-                raw=row["raw_content"],
-                metadata=row.get("raw_metadata", {}),
-            )
-            if validate_code_section(section):
-                _upsert_code_section(db, section)
+            if row_source in ("ecode360_belair", "ecode360_harford"):
+                section = normalize_ecode360_section(
+                    bronze_id=row["id"],
+                    raw=row["raw_content"],
+                    metadata=row.get("raw_metadata", {}),
+                )
+                if validate_code_section(section):
+                    _upsert_code_section(db, section)
+                    normalized += 1
 
-        elif row_source in NORMALIZERS:
-            normalizer = NORMALIZERS[row_source]
-            item = normalizer(bronze_id=row["id"], raw=row["raw_content"])
-            if validate_legislative_item(item):
-                _upsert_legislative_item(db, item)
+            elif row_source in NORMALIZERS:
+                normalizer = NORMALIZERS[row_source]
+                item = normalizer(bronze_id=row["id"], raw=row["raw_content"])
+                if validate_legislative_item(item):
+                    _upsert_legislative_item(db, item)
+                    normalized += 1
 
-        else:
-            logger.warning(f"No normalizer for source: {row_source}")
+            else:
+                logger.warning(f"No normalizer for source: {row_source}")
+
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=len(all_rows),
+            records_new=normalized,
+        )
+        logger.info(f"Normalization complete: {normalized}/{len(all_rows)} records processed")
+
+    except Exception as e:
+        logger.error(f"Normalization failed: {e}")
+        complete_ingestion_run(db, run_id, error_message=str(e))
+        raise
 
 
 def _upsert_legislative_item(db, item: LegislativeItem) -> None:
