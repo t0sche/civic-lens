@@ -14,13 +14,11 @@ links to PDF documents in the CivicPlus DocumentCenter.
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import time
 from dataclasses import asdict, dataclass
 
-import pdfplumber
 import requests
 from bs4 import BeautifulSoup
 
@@ -129,12 +127,17 @@ def scrape_legislation_page() -> list[LegislationEntry]:
     return entries
 
 
-def fetch_pdf_text(url: str, session: requests.Session) -> str | None:
+def fetch_pdf_text(url: str, session: requests.Session) -> tuple[str | None, int]:
     """
-    Download a PDF from a URL and extract its text content using pdfplumber.
+    Download a PDF from a URL and extract its text content.
 
-    Returns the extracted text, or None if the download or extraction fails.
+    Uses pdfplumber with OCR fallback for scanned documents.
+
+    Returns (extracted_text, ocr_page_count), or (None, 0) if the download
+    or extraction fails.
     """
+    from src.ingestion.extractors.pdf_extractor import extract_text
+
     try:
         logger.info(f"Downloading PDF: {url}")
         resp = session.get(url, timeout=30)
@@ -143,31 +146,21 @@ def fetch_pdf_text(url: str, session: requests.Session) -> str | None:
         content_type = resp.headers.get("content-type", "")
         if "pdf" not in content_type and not url.endswith(".pdf"):
             logger.debug(f"Skipping non-PDF response: {content_type}")
-            return None
+            return None, 0
 
-        with pdfplumber.open(io.BytesIO(resp.content)) as pdf:
-            pages = []
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    pages.append(text)
-
-            if not pages:
-                logger.warning(f"No text extracted from PDF: {url}")
-                return None
-
-            full_text = "\n\n".join(pages)
-            logger.info(
-                f"Extracted {len(full_text)} chars from {len(pages)} pages: {url}"
-            )
-            return full_text
+        result = extract_text(resp.content)
+        logger.info(
+            f"Extracted {len(result.text)} chars from {result.page_count} pages "
+            f"({result.ocr_page_count} OCR'd): {url}"
+        )
+        return result.text, result.ocr_page_count
 
     except requests.RequestException as e:
         logger.warning(f"Failed to download PDF {url}: {e}")
-        return None
+        return None, 0
     except Exception as e:
         logger.warning(f"Failed to extract text from PDF {url}: {e}")
-        return None
+        return None, 0
 
 
 def ingest_belair_legislation() -> None:
@@ -199,10 +192,11 @@ def ingest_belair_legislation() -> None:
         updated = 0
 
         for entry in entries:
-            # Try to extract full text from PDF
+            # Try to extract full text from PDF (with OCR fallback)
             pdf_text = None
+            ocr_page_count = 0
             if entry.pdf_url:
-                pdf_text = fetch_pdf_text(entry.pdf_url, session)
+                pdf_text, ocr_page_count = fetch_pdf_text(entry.pdf_url, session)
                 time.sleep(REQUEST_DELAY)
 
             # Use PDF text as raw_content if available, fall back to metadata JSON
@@ -213,6 +207,7 @@ def ingest_belair_legislation() -> None:
                     "item_type": entry.item_type,
                     "has_pdf": True,
                     "pdf_extracted": True,
+                    "ocr_pages": ocr_page_count,
                     "pdf_url": entry.pdf_url,
                     "title": entry.title,
                     "number": entry.number,

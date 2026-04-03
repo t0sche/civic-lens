@@ -10,7 +10,9 @@ feedparser>=6.0.0          # RSS feed parsing
 
 # ─── PDF Extraction ─────────────────────────────────────────────────
 pdfplumber>=0.11.0         # PDF text/table extraction
-# pytesseract>=0.3.10     # OCR — uncomment when Tier 3 PDF work begins
+pytesseract>=0.3.10        # OCR for scanned PDFs (requires: brew install tesseract)
+pdf2image>=1.17.0          # PDF page → PIL image conversion (requires: poppler)
+Pillow>=10.0.0             # Image processing for OCR pipeline
 
 # ─── Database ────────────────────────────────────────────────────────
 supabase>=2.5.0            # Supabase Python client
