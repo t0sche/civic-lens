@@ -167,13 +167,31 @@ def normalize_openstates_bill(bronze_id: str, raw: dict) -> LegislativeItem:
     )
 
 
-def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
+def normalize_belair_legislation(
+    bronze_id: str, raw: dict, metadata: dict | None = None,
+) -> LegislativeItem:
     """
     Normalize a municipal legislation entry to a LegislativeItem.
 
+    Handles two raw_content formats:
+    - JSON metadata (legacy, or when PDF extraction fails)
+    - Raw PDF text (when PDF was downloaded and extracted)
+
+    When raw_content is PDF text, metadata fields come from raw_metadata.
+
     @spec DATA-PIPE-002
     """
-    entry = json.loads(raw) if isinstance(raw, str) else raw
+    metadata = metadata or {}
+
+    # Detect if raw_content is PDF text or JSON metadata
+    if metadata.get("pdf_extracted"):
+        # raw is the PDF text — get metadata from raw_metadata
+        entry = metadata
+        summary = raw[:2000] if isinstance(raw, str) else None
+    else:
+        # raw is JSON metadata (legacy format)
+        entry = json.loads(raw) if isinstance(raw, str) else raw
+        summary = None
 
     item_type_str = entry.get("item_type", "other")
     item_type = {
@@ -191,6 +209,7 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
         body=(get_municipal_config() or {}).get("body", "Municipal Government"),
         item_type=item_type,
         title=entry.get("title", "Untitled"),
+        summary=summary,
         status=status,
         source_url=entry.get("pdf_url") or entry.get("source_url"),
     )
@@ -381,11 +400,30 @@ def run_normalization(source: str | None = None) -> None:
         logger.info(f"No Bronze records to normalize for source={source or 'all'}")
         return
 
-    run_id = start_ingestion_run(db, "normalize")
-    logger.info(
-        f"Normalizing {len(all_rows)} Bronze records"
-        + (f" (since {since})" if since else " (full run)")
-    )
+    logger.info(f"Normalizing {len(all_rows)} Bronze records")
+
+    for row in all_rows:
+        row_source = row["source"]
+
+        if row_source in ("ecode360_belair", "ecode360_harford"):
+            # Code sections use a different normalization path
+            section = normalize_ecode360_section(
+                bronze_id=row["id"],
+                raw=row["raw_content"],
+                metadata=row.get("raw_metadata", {}),
+            )
+            if validate_code_section(section):
+                _upsert_code_section(db, section)
+
+        elif row_source in NORMALIZERS:
+            normalizer = NORMALIZERS[row_source]
+            kwargs: dict = {"bronze_id": row["id"], "raw": row["raw_content"]}
+            # Pass raw_metadata to normalizers that accept it (e.g., belair)
+            if row_source == "belair_legislation":
+                kwargs["metadata"] = row.get("raw_metadata", {})
+            item = normalizer(**kwargs)
+            if validate_legislative_item(item):
+                _upsert_legislative_item(db, item)
 
     try:
         normalized = 0

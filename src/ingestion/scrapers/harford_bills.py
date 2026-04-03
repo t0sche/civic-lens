@@ -277,6 +277,46 @@ def fetch_all_bills(session: requests.Session) -> Generator[HarfordBill, None, N
         page += 1
 
 
+def _fetch_bill_detail_text(session: requests.Session, detail_url: str) -> str | None:
+    """
+    Fetch and extract text content from a county bill detail page.
+
+    Returns the extracted text, or None if the fetch or extraction fails.
+    """
+    try:
+        time.sleep(REQUEST_DELAY)
+        response = session.get(
+            detail_url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "lxml")
+
+        # Remove non-content elements
+        for element in soup(["script", "style", "nav", "header", "footer"]):
+            element.decompose()
+
+        # Look for main content area (ASP.NET apps often use ContentPlaceHolder)
+        content = (
+            soup.find("div", {"id": re.compile(r"ContentPlaceHolder|content|main|detail", re.I)})
+            or soup.find("main")
+            or soup.find("body")
+        )
+
+        if not content:
+            return None
+
+        text = content.get_text(separator="\n\n").strip()
+        # Only return if we got meaningful content (not just nav boilerplate)
+        return text if len(text) > 100 else None
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch bill detail from {detail_url}: {e}")
+        return None
+
+
 def ingest_harford_bills() -> None:
     """
     Main ingestion entry point: scrape county bills and write to Bronze.
@@ -297,6 +337,11 @@ def ingest_harford_bills() -> None:
         updated = 0
 
         for bill in fetch_all_bills(session):
+            # Try to fetch full text from bill detail page
+            detail_text = None
+            if bill.detail_url:
+                detail_text = _fetch_bill_detail_text(session, bill.detail_url)
+
             raw_content = json.dumps({
                 "bill_number": bill.bill_number,
                 "title": bill.title,
@@ -310,12 +355,18 @@ def ingest_harford_bills() -> None:
                 "body": _county["body"] if _county else "County Council",
             })
 
+            raw_metadata: dict = {}
+            if detail_text:
+                raw_metadata["full_text_extracted"] = True
+                raw_metadata["full_text"] = detail_text[:100_000]
+
             result = upsert_bronze_document(
                 db,
                 source="harford_bills",
                 source_id=bill.bill_number,
                 document_type="bill",
                 raw_content=raw_content,
+                raw_metadata=raw_metadata,
                 url=bill.detail_url or BILLS_URL,
             )
 

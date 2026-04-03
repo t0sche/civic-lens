@@ -17,6 +17,7 @@ import time
 from typing import Any, Generator
 
 import requests
+from bs4 import BeautifulSoup
 
 from src.lib.config import get_config, get_state_config
 from src.lib.supabase import (
@@ -149,6 +150,47 @@ class OpenStatesClient:
         return self._get(f"/bills/{bill_id}")
 
 
+def _fetch_source_text(sources: list[dict]) -> str | None:
+    """
+    Try to fetch full bill text from legislature source URLs (best-effort).
+
+    Fetches HTML pages linked in the bill's sources array and extracts
+    text content. Skips PDFs (no pdfplumber in this module).
+    """
+    for source in sources:
+        url = source.get("url", "")
+        if not url:
+            continue
+        try:
+            resp = requests.get(url, timeout=10, headers={
+                "User-Agent": "CivicLens/1.0 (civic transparency research)",
+                "Accept": "text/html, text/plain",
+            })
+            if not resp.ok:
+                continue
+
+            content_type = resp.headers.get("content-type", "")
+            if "pdf" in content_type:
+                continue
+
+            if "html" in content_type or "text" in content_type:
+                soup = BeautifulSoup(resp.text, "lxml")
+                for el in soup(["script", "style", "nav", "header", "footer"]):
+                    el.decompose()
+                content = (
+                    soup.find("article")
+                    or soup.find("main")
+                    or soup.find("body")
+                )
+                if content:
+                    text = content.get_text(separator="\n\n").strip()
+                    if len(text) > 200:
+                        return text
+        except Exception:
+            continue
+    return None
+
+
 def ingest_state_bills(
     session: str | None = None,
     updated_since: str | None = None,
@@ -176,17 +218,25 @@ def ingest_state_bills(
 
             raw_content = json.dumps(bill, default=str)
 
+            # Try to fetch full text from bill source URLs (best-effort)
+            full_text = _fetch_source_text(bill.get("sources", []))
+
+            raw_metadata: dict = {
+                "identifier": identifier,
+                "session": bill.get("session", ""),
+                "classification": bill.get("classification", []),
+            }
+            if full_text:
+                raw_metadata["full_text_extracted"] = True
+                raw_metadata["full_text"] = full_text[:100_000]
+
             result = upsert_bronze_document(
                 db,
                 source="openstates",
                 source_id=bill_id,
                 document_type="bill",
                 raw_content=raw_content,
-                raw_metadata={
-                    "identifier": identifier,
-                    "session": bill.get("session", ""),
-                    "classification": bill.get("classification", []),
-                },
+                raw_metadata=raw_metadata,
                 url=bill.get("openstates_url"),
             )
 
