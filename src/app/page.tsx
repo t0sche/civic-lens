@@ -1,13 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@/lib/supabase-client";
+import { statusColor, jurisdictionLabel } from "@/lib/badges";
 import config from "../../civic-lens.config.json";
-
-// Server-side Supabase client for SSR data fetching
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
 
 type JurisdictionFilter = "ALL" | "STATE" | "COUNTY" | "MUNICIPAL";
 
@@ -32,7 +25,7 @@ interface LegislativeItem {
 async function fetchLegislativeItems(
   jurisdiction?: JurisdictionFilter
 ): Promise<LegislativeItem[]> {
-  const db = getSupabase();
+  const db = createServerClient();
   let query = db
     .from("legislative_items")
     .select("*")
@@ -49,38 +42,6 @@ async function fetchLegislativeItems(
     return [];
   }
   return data || [];
-}
-
-// Status badge color mapping
-function statusColor(status: string): string {
-  const colors: Record<string, string> = {
-    INTRODUCED: "bg-blue-100 text-blue-800",
-    IN_COMMITTEE: "bg-yellow-100 text-yellow-800",
-    PASSED_ONE_CHAMBER: "bg-indigo-100 text-indigo-800",
-    ENACTED: "bg-green-100 text-green-800",
-    APPROVED: "bg-green-100 text-green-800",
-    EFFECTIVE: "bg-green-100 text-green-800",
-    VETOED: "bg-red-100 text-red-800",
-    REJECTED: "bg-red-100 text-red-800",
-    EXPIRED: "bg-gray-100 text-gray-800",
-    PENDING: "bg-amber-100 text-amber-800",
-    TABLED: "bg-orange-100 text-orange-800",
-    UNKNOWN: "bg-gray-100 text-gray-600",
-  };
-  return colors[status] || colors.UNKNOWN;
-}
-
-// Jurisdiction label styling
-function jurisdictionLabel(jurisdiction: string): {
-  text: string;
-  className: string;
-} {
-  const labels: Record<string, { text: string; className: string }> = {
-    STATE: { text: "State", className: "bg-purple-100 text-purple-800" },
-    COUNTY: { text: "County", className: "bg-teal-100 text-teal-800" },
-    MUNICIPAL: { text: "Municipal", className: "bg-sky-100 text-sky-800" },
-  };
-  return labels[jurisdiction] || { text: jurisdiction, className: "bg-gray-100 text-gray-800" };
 }
 
 // @spec DASH-VIEW-001, DASH-VIEW-002
@@ -135,9 +96,10 @@ export default async function DashboardPage({
           {items.map((item) => {
             const jLabel = jurisdictionLabel(item.jurisdiction);
             return (
-              <div
+              <a
                 key={item.id}
-                className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:shadow-md"
+                href={`/legislation/${item.id}`}
+                className="block rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:shadow-md hover:border-gray-300"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
@@ -159,18 +121,7 @@ export default async function DashboardPage({
                       </span>
                     </div>
                     <h3 className="text-sm font-semibold leading-snug">
-                      {item.source_url ? (
-                        <a
-                          href={item.source_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:text-blue-600 hover:underline"
-                        >
-                          {item.title}
-                        </a>
-                      ) : (
-                        item.title
-                      )}
+                      {item.title}
                     </h3>
                     {item.summary && (
                       <p className="mt-1 text-xs text-gray-600 line-clamp-2">
@@ -189,8 +140,21 @@ export default async function DashboardPage({
                       )}
                     </div>
                   </div>
+                  <svg
+                    className="mt-1 h-4 w-4 flex-shrink-0 text-gray-300"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
                 </div>
-              </div>
+              </a>
             );
           })}
         </div>
