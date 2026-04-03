@@ -7,17 +7,23 @@ eCode360 platform. Municipality codes are configured in civic-lens.config.json.
 The scraper preserves section hierarchy (chapter → article → section)
 and generates section_path breadcrumbs for RAG retrieval context.
 
+Also fetches "New Laws" PDF documents (bills, executive orders) from
+the eCode360 laws page and extracts their text via pdfplumber.
+
 @spec INGEST-SCRAPE-001, INGEST-SCRAPE-002
 """
 
 from __future__ import annotations
 
+import io
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Generator
 
 import cloudscraper
+import pdfplumber
 from bs4 import BeautifulSoup
 
 from src.lib.config import get_scraper_config
@@ -49,6 +55,18 @@ class CodeEntry:
     level: str        # "chapter", "article", "section"
     code_id: str      # eCode360 internal ID
     children: list["CodeEntry"] | None = None
+    content: str | None = None
+
+
+@dataclass
+class LawEntry:
+    """A law/bill/executive order from the eCode360 'New Laws' page."""
+    title: str
+    pdf_url: str
+    law_id: str           # e.g., "LF2639692"
+    adopted_date: str | None = None
+    subject: str | None = None
+    affects: str | None = None
     content: str | None = None
 
 
@@ -157,6 +175,107 @@ class ECode360Scraper:
                 content=content,
             )
 
+    def fetch_laws(self) -> list[LawEntry]:
+        """
+        Fetch the 'New Laws' page and discover PDF law documents.
+
+        The laws page lists bills and executive orders with links to PDF files
+        following the pattern /laws/LF{id}.pdf.
+        """
+        laws_url = f"{self.base_url}/laws"
+        logger.info(f"Fetching laws page: {laws_url}")
+
+        response = self.session.get(laws_url)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "lxml")
+        laws: list[LawEntry] = []
+
+        # Find all PDF links on the laws page — pattern: /laws/LF{id}.pdf
+        pdf_links = soup.find_all("a", href=re.compile(r"/laws/LF\d+\.pdf", re.I))
+
+        for link in pdf_links:
+            href = link.get("href", "")
+            if href.startswith("/"):
+                href = f"{ECODE360_BASE}{href}"
+
+            # Extract law ID from URL (e.g., "LF2639692" from ".../LF2639692.pdf")
+            id_match = re.search(r"(LF\d+)\.pdf", href)
+            law_id = id_match.group(1) if id_match else href
+
+            title = link.get_text(strip=True)
+            # The link text often includes "pdf" suffix from the icon — strip it
+            title = re.sub(r"pdf$", "", title).strip()
+            if not title:
+                title = law_id
+
+            # Try to extract metadata from surrounding table row or list item
+            row = link.find_parent("tr")
+            adopted_date = None
+            subject = None
+            affects = None
+
+            if row:
+                cells = row.find_all("td")
+                # Column layout: [0] Title, [1] Adopted, [2] Subject, [3] Affects
+                if len(cells) >= 2:
+                    adopted_date = cells[1].get_text(strip=True) or None
+                if len(cells) >= 3:
+                    subject = cells[2].get_text(strip=True) or None
+                if len(cells) >= 4:
+                    affects = cells[3].get_text(strip=True) or None
+
+            laws.append(LawEntry(
+                title=title,
+                pdf_url=href,
+                law_id=law_id,
+                adopted_date=adopted_date,
+                subject=subject,
+                affects=affects,
+            ))
+
+        logger.info(f"Found {len(laws)} law PDFs")
+        return laws
+
+    def fetch_law_pdf_text(self, law: LawEntry) -> str | None:
+        """
+        Download a law PDF and extract its text content using pdfplumber.
+
+        Returns the extracted text, or None if download or extraction fails.
+        """
+        try:
+            logger.info(f"Downloading PDF: {law.title} ({law.pdf_url})")
+            time.sleep(REQUEST_DELAY)
+
+            resp = self.session.get(law.pdf_url, timeout=30)
+            resp.raise_for_status()
+
+            content_type = resp.headers.get("content-type", "")
+            if "pdf" not in content_type and not law.pdf_url.endswith(".pdf"):
+                logger.debug(f"Skipping non-PDF response: {content_type}")
+                return None
+
+            with pdfplumber.open(io.BytesIO(resp.content)) as pdf:
+                pages = []
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        pages.append(text)
+
+                if not pages:
+                    logger.warning(f"No text extracted from PDF: {law.pdf_url}")
+                    return None
+
+                full_text = "\n\n".join(pages)
+                logger.info(
+                    f"Extracted {len(full_text)} chars from {len(pages)} pages: {law.title}"
+                )
+                return full_text
+
+        except Exception as e:
+            logger.warning(f"Failed to extract PDF {law.pdf_url}: {e}")
+            return None
+
 
 def determine_source_name(municipality_code: str) -> str:
     """Map municipality code to a human-readable source name."""
@@ -232,6 +351,88 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
         raise
 
 
+def ingest_ecode360_laws(municipality_code: str = HARFORD_COUNTY_CODE) -> None:
+    """
+    Scrape eCode360 'New Laws' PDFs and write to Bronze layer.
+
+    Downloads each PDF, extracts text via pdfplumber, and stores the
+    full text as raw_content with law metadata.
+    """
+    scraper = ECode360Scraper(municipality_code)
+    db = get_supabase_client()
+    source_name = f"{determine_source_name(municipality_code)}_laws"
+    run_id = start_ingestion_run(db, source_name)
+
+    try:
+        laws = scraper.fetch_laws()
+        fetched = 0
+        new = 0
+        updated = 0
+
+        for law in laws:
+            pdf_text = scraper.fetch_law_pdf_text(law)
+
+            raw_metadata = {
+                "title": law.title,
+                "law_id": law.law_id,
+                "adopted_date": law.adopted_date,
+                "subject": law.subject,
+                "affects": law.affects,
+                "municipality_code": municipality_code,
+                "pdf_url": law.pdf_url,
+                "has_pdf": True,
+                "pdf_extracted": pdf_text is not None,
+            }
+
+            # Use extracted PDF text as content; fall back to metadata summary
+            if pdf_text:
+                raw_content = pdf_text
+            else:
+                raw_content = (
+                    f"{law.title}\n"
+                    f"Adopted: {law.adopted_date or 'Unknown'}\n"
+                    f"Subject: {law.subject or 'N/A'}\n"
+                    f"Affects: {law.affects or 'N/A'}\n"
+                )
+
+            result = upsert_bronze_document(
+                db,
+                source=source_name,
+                source_id=law.law_id,
+                document_type="law",
+                raw_content=raw_content,
+                raw_metadata=raw_metadata,
+                url=law.pdf_url,
+            )
+
+            fetched += 1
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+                logger.info(f"New law: {law.title}")
+            elif status == "updated":
+                updated += 1
+                logger.info(f"Updated law: {law.title}")
+            else:
+                logger.debug(f"Unchanged law: {law.title}")
+
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=fetched,
+            records_new=new,
+            records_updated=updated,
+        )
+        logger.info(
+            f"eCode360 laws ingestion complete: {fetched} fetched, {new} new, "
+            f"{updated} updated from {municipality_code}"
+        )
+
+    except Exception as e:
+        logger.error(f"eCode360 laws ingestion failed: {e}")
+        complete_ingestion_run(db, run_id, error_message=str(e))
+        raise
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -247,8 +448,16 @@ if __name__ == "__main__":
             f"(default: {available_codes[0] if available_codes else 'none configured'})"
         ),
     )
+    parser.add_argument(
+        "--laws",
+        action="store_true",
+        help="Scrape 'New Laws' PDF documents instead of code sections",
+    )
     args = parser.parse_args()
     if args.municipality:
-        ingest_municipal_code(args.municipality)
+        if args.laws:
+            ingest_ecode360_laws(args.municipality)
+        else:
+            ingest_municipal_code(args.municipality)
     else:
         logger.error("No municipality codes configured in civic-lens.config.json")
