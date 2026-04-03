@@ -3,13 +3,16 @@
 
 # ─── HTTP / Scraping ────────────────────────────────────────────────
 requests>=2.31.0
+cloudscraper>=1.2.71       # Cloudflare challenge bypass for eCode360
 beautifulsoup4>=4.12.0
 lxml>=5.1.0               # Fast HTML/XML parser for BS4
 feedparser>=6.0.0          # RSS feed parsing
 
 # ─── PDF Extraction ─────────────────────────────────────────────────
 pdfplumber>=0.11.0         # PDF text/table extraction
-# pytesseract>=0.3.10     # OCR — uncomment when Tier 3 PDF work begins
+pytesseract>=0.3.10        # OCR for scanned PDFs (requires: brew install tesseract)
+pdf2image>=1.17.0          # PDF page → PIL image conversion (requires: poppler)
+Pillow>=10.0.0             # Image processing for OCR pipeline
 
 # ─── Database ────────────────────────────────────────────────────────
 supabase>=2.5.0            # Supabase Python client
@@ -17,7 +20,7 @@ psycopg2-binary>=2.9.9    # Postgres driver (for direct pgvector queries if need
 
 # ─── Embeddings ──────────────────────────────────────────────────────
 # sentence-transformers>=3.0.0  # For local MiniLM — uncomment if not using Gemini
-google-generativeai>=0.7.0     # Gemini embedding API
+google-genai>=1.0.0            # Gemini embedding API (new SDK)
 
 # ─── Data Processing ────────────────────────────────────────────────
 pydantic>=2.7.0            # Data validation and schema enforcement

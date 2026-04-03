@@ -1,5 +1,5 @@
 """
-Open States API v3 client for Maryland state legislative data.
+Open States API v3 client for state legislative data.
 
 Fetches bills, votes, sponsors, and committee data from the Open States
 GraphQL/REST API and writes to the Bronze layer.
@@ -11,23 +11,27 @@ API docs: https://docs.openstates.org/api-v3/
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from typing import Any, Generator
 
 import requests
+from bs4 import BeautifulSoup
 
-from src.lib.config import get_config
+from src.lib.config import get_config, get_state_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://v3.openstates.org"
-MARYLAND_JURISDICTION = "ocd-jurisdiction/country:us/state:md/government"
+OPENSTATES_JURISDICTION = get_state_config()["openstates_jurisdiction"]
+MARYLAND_JURISDICTION = OPENSTATES_JURISDICTION  # backwards-compatible alias
 
 
 class OpenStatesClient:
@@ -47,9 +51,34 @@ class OpenStatesClient:
         })
 
     def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict:
-        """Make an authenticated GET request with error handling."""
+        """Make an authenticated GET request with rate-limit retry."""
         url = f"{BASE_URL}{endpoint}"
-        response = self.session.get(url, params=params or {})
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            response = self.session.get(url, params=params or {})
+            if response.status_code == 429:
+                wait = 5 * (2 ** attempt)  # @spec INGEST-API-006: 5s exponential backoff
+                logger.warning(
+                    "Rate limited (429). Waiting %ds before retry %d/%d",
+                    wait, attempt + 1, max_retries
+                )
+                time.sleep(wait)
+                continue
+            if response.status_code >= 500:  # @spec INGEST-API-007: 5xx retry with 10s delay
+                if attempt < max_retries:
+                    logger.warning(
+                        "Server error %s %s. Waiting 10s before retry %d/%d",
+                        response.status_code, response.url, attempt + 1, max_retries
+                    )
+                    time.sleep(10)
+                    continue
+            if not response.ok:
+                logger.error(
+                    "API error %s %s: %s", response.status_code, response.url, response.text
+                )
+            response.raise_for_status()
+            return response.json()
+        # Final attempt after all retries exhausted
         response.raise_for_status()
         return response.json()
 
@@ -61,13 +90,13 @@ class OpenStatesClient:
         per_page: int = 20,
     ) -> dict:
         """
-        Fetch Maryland bills with optional filters.
+        Fetch state bills with optional filters.
 
         Args:
             session: Legislative session (e.g., "2025"). Defaults to current.
             updated_since: ISO date string — only return bills updated after this date.
             page: Page number for pagination.
-            per_page: Results per page (max 50).
+            per_page: Results per page (max 20).
 
         Returns:
             API response with 'results' list and 'pagination' metadata.
@@ -75,7 +104,7 @@ class OpenStatesClient:
         params: dict[str, Any] = {
             "jurisdiction": MARYLAND_JURISDICTION,
             "page": page,
-            "per_page": min(per_page, 50),
+            "per_page": min(per_page, 20),
             "include": ["abstracts", "actions", "sponsorships", "sources"],
         }
         if session:
@@ -91,7 +120,7 @@ class OpenStatesClient:
         updated_since: str | None = None,
     ) -> Generator[dict, None, None]:
         """
-        Fetch all Maryland bills with automatic pagination.
+        Fetch all state bills with automatic pagination.
 
         Yields individual bill records.
         """
@@ -101,7 +130,7 @@ class OpenStatesClient:
                 session=session,
                 updated_since=updated_since,
                 page=page,
-                per_page=50,
+                per_page=20,
             )
             results = response.get("results", [])
             if not results:
@@ -113,10 +142,53 @@ class OpenStatesClient:
             if page >= pagination.get("max_page", 1):
                 break
             page += 1
+            # Stay under 10 req/min rate limit
+            time.sleep(7)
 
     def fetch_bill_detail(self, bill_id: str) -> dict:
         """Fetch full detail for a single bill by Open States ID."""
         return self._get(f"/bills/{bill_id}")
+
+
+def _fetch_source_text(sources: list[dict]) -> str | None:
+    """
+    Try to fetch full bill text from legislature source URLs (best-effort).
+
+    Fetches HTML pages linked in the bill's sources array and extracts
+    text content. Skips PDFs (no pdfplumber in this module).
+    """
+    for source in sources:
+        url = source.get("url", "")
+        if not url:
+            continue
+        try:
+            resp = requests.get(url, timeout=10, headers={
+                "User-Agent": "CivicLens/1.0 (civic transparency research)",
+                "Accept": "text/html, text/plain",
+            })
+            if not resp.ok:
+                continue
+
+            content_type = resp.headers.get("content-type", "")
+            if "pdf" in content_type:
+                continue
+
+            if "html" in content_type or "text" in content_type:
+                soup = BeautifulSoup(resp.text, "lxml")
+                for el in soup(["script", "style", "nav", "header", "footer"]):
+                    el.decompose()
+                content = (
+                    soup.find("article")
+                    or soup.find("main")
+                    or soup.find("body")
+                )
+                if content:
+                    text = content.get_text(separator="\n\n").strip()
+                    if len(text) > 200:
+                        return text
+        except Exception:
+            continue
+    return None
 
 
 def ingest_state_bills(
@@ -144,9 +216,19 @@ def ingest_state_bills(
             bill_id = bill.get("id", "")
             identifier = bill.get("identifier", "unknown")
 
-            # Serialize the full bill JSON as raw content
-            import json
             raw_content = json.dumps(bill, default=str)
+
+            # Try to fetch full text from bill source URLs (best-effort)
+            full_text = _fetch_source_text(bill.get("sources", []))
+
+            raw_metadata: dict = {
+                "identifier": identifier,
+                "session": bill.get("session", ""),
+                "classification": bill.get("classification", []),
+            }
+            if full_text:
+                raw_metadata["full_text_extracted"] = True
+                raw_metadata["full_text"] = full_text[:100_000]
 
             result = upsert_bronze_document(
                 db,
@@ -154,16 +236,19 @@ def ingest_state_bills(
                 source_id=bill_id,
                 document_type="bill",
                 raw_content=raw_content,
-                raw_metadata={
-                    "identifier": identifier,
-                    "session": bill.get("session", ""),
-                    "classification": bill.get("classification", []),
-                },
+                raw_metadata=raw_metadata,
                 url=bill.get("openstates_url"),
             )
 
-            # TODO: Track new vs. updated based on content_hash comparison
-            logger.info(f"Ingested bill {identifier} ({bill_id})")
+            status = result.get("status", "")
+            if status == "new":
+                new += 1
+                logger.info(f"New bill {identifier} ({bill_id})")
+            elif status == "updated":
+                updated += 1
+                logger.info(f"Updated bill {identifier} ({bill_id})")
+            else:
+                logger.debug(f"Skipped unchanged bill {identifier} ({bill_id})")
 
         complete_ingestion_run(
             db, run_id,

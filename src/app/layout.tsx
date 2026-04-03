@@ -1,16 +1,18 @@
+import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import "./globals.css";
+import config from "../../civic-lens.config.json";
+import { getDisplayConfig } from "@/lib/locality";
 
 export const metadata: Metadata = {
-  title: "CivicLens — Bel Air, MD",
-  description:
-    "Plain-language access to the laws that affect you. Track legislation and ask questions about local, county, and state law in Bel Air, Maryland.",
+  title: `${config.display.title} — ${config.display.subtitle}`,
+  description: `${config.display.description} Track legislation and ask questions about local, county, and state law.`,
 };
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <html lang="en">
@@ -30,6 +32,9 @@ export default function RootLayout({
               <a href="/about" className="hover:text-blue-600">
                 About
               </a>
+              <a href="/stats" className="hover:text-blue-600">
+                Stats
+              </a>
             </div>
           </nav>
         </header>
@@ -40,8 +45,7 @@ export default function RootLayout({
             Information is provided for educational purposes only.
           </p>
           <p className="mt-1">
-            Data sourced from Maryland General Assembly, Harford County, and
-            Town of Bel Air public records.
+            {getDisplayConfig().footer_attribution}
           </p>
           <p className="mt-1">
             Legislative data provided by{" "}

@@ -4,7 +4,7 @@ Bronze → Silver → Gold medallion transformation. Normalizes raw ingested dat
 
 ## Status
 
-**MAPPED** - 2026-03-14. Data model defined in HLD §7; transformation logic not yet built.
+**PARTIALLY_IMPLEMENTED** - 2026-03-19. normalize.py covers all 5 active sources (openstates, belair_legislation, harford_bills, ecode360_belair, ecode360_harford). validate.py created in run 5 implementing DATA-PIPE-040/041/042 and integrated into run_normalization(). legiscan normalizer is implemented but commented out pending Phase 9. DATA-PIPE-050/051/052 (LLM enrichment) are deferred.
 
 ## References
 
@@ -42,7 +42,11 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- normalize.py implements source-specific normalizers for all 5 active Bronze sources and dispatches via NORMALIZERS registry plus inline handling for ecode360 variants.
+- _upsert_legislative_item() uses (source_id, jurisdiction, body) conflict key (DATA-PIPE-030); _upsert_code_section() uses (code_source, chapter, section) (DATA-PIPE-031).
+- validate.py (created run 5) implements DATA-PIPE-040/041/042: rejects Silver records with empty/oversized title, empty source_id, and empty body. Integrated into run_normalization() before each upsert call.
+- **MEDIUM**: test_silver_transforms.py listed in References but does not exist — run_normalization() flow has no integration-level tests.
+- **DEFERRED**: DATA-PIPE-050/051/052 (LLM enrichment: summaries, topic tags) — Phase 9.
 
 ## Work Required
 

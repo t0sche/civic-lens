@@ -1,20 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import config from "../../../civic-lens.config.json";
+import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
 
 /**
  * Chat interface for asking questions about local law.
  *
+ * Uses AI SDK data stream protocol for streaming responses
+ * with question-type-based model routing.
+ *
  * @spec CHAT-UI-001, CHAT-UI-002
  */
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  sources?: Source[];
-  model?: string;
-  tier?: string;
-}
 
 interface Source {
   index: number;
@@ -23,6 +20,18 @@ interface Source {
   source_type: string;
   similarity: number;
   data_source?: string;
+  url: string | null;
+}
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  detail?: string;
+  isError?: boolean;
+  sources?: Source[];
+  model?: string;
+  tier?: string;
+  questionType?: string;
 }
 
 const EXAMPLE_QUESTIONS = [
@@ -32,74 +41,151 @@ const EXAMPLE_QUESTIONS = [
   "What bills are being considered in the Maryland General Assembly that affect Harford County?",
 ];
 
+const TIER_LABELS: Record<string, string> = {
+  frontier: "Deep analysis",
+  free: "Quick answer",
+};
+
+const QUESTION_TYPE_LABELS: Record<string, string> = {
+  factual_lookup: "Fact check",
+  definition: "Definition",
+  status_check: "Status",
+  procedural: "How-to",
+  comparison: "Comparison",
+  analysis: "Analysis",
+  multi_jurisdiction: "Multi-jurisdiction",
+  synthesis: "Synthesis",
+};
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
-  async function handleSubmit(query?: string) {
-    const message = query || input.trim();
-    if (!message || loading) return;
+  const handleSubmit = useCallback(
+    async (query?: string) => {
+      const message = query || input.trim();
+      if (!message || loading) return;
 
-    setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: message }]);
-    setLoading(true);
+      setInput("");
+      setMessages((prev) => [...prev, { role: "user", content: message }]);
+      setLoading(true);
+      setStreamingContent("");
 
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message }),
+        });
 
-      const data = await response.json();
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const statusMsg =
+            response.status === 400
+              ? "Invalid request."
+              : response.status === 429
+                ? "Too many requests — please wait a moment and try again."
+                : response.status >= 500
+                  ? `Server error (HTTP ${response.status}).`
+                  : `Request failed (HTTP ${response.status}).`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              isError: true,
+              content: data.error || statusMsg,
+              detail: data.detail,
+            },
+          ]);
+          return;
+        }
 
-      if (response.ok) {
+        // Parse metadata from custom headers
+        const model = response.headers.get("X-Model") || undefined;
+        const tier = response.headers.get("X-Tier") || undefined;
+        const questionType =
+          response.headers.get("X-Question-Type") || undefined;
+        let sources: Source[] | undefined;
+        const sourcesHeader = response.headers.get("X-Sources");
+        if (sourcesHeader) {
+          try {
+            sources = JSON.parse(sourcesHeader);
+          } catch {
+            // ignore parse errors
+          }
+        }
+
+        // Stream the plain text response body
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("No response body");
+        }
+
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          setStreamingContent(fullText);
+        }
+
+        // Finalize the message
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: data.answer,
-            sources: data.sources,
-            model: data.model,
-            tier: data.tier,
+            content: fullText,
+            sources,
+            model,
+            tier,
+            questionType,
           },
         ]);
-      } else {
+        setStreamingContent("");
+      } catch (err) {
+        const msg =
+          err instanceof TypeError
+            ? "Unable to reach the server — check your connection."
+            : err instanceof Error
+              ? err.message
+              : "An unexpected error occurred.";
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: data.error || "Sorry, something went wrong. Please try again.",
+            isError: true,
+            content: msg,
           },
         ]);
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Unable to connect to the server. Please check your connection and try again.",
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  }
+    },
+    [input, loading]
+  );
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col px-4 py-8" style={{ minHeight: "calc(100vh - 140px)" }}>
+    <div
+      className="mx-auto flex max-w-3xl flex-col px-4 py-8"
+      style={{ minHeight: "calc(100vh - 140px)" }}
+    >
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Ask About Local Law</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Ask plain-language questions about laws, ordinances, and regulations
-          affecting Bel Air, MD across state, county, and municipal government.
+          Ask plain-language questions about laws, ordinances, and regulations{" "}
+          {`affecting ${config.display.subtitle} across state, county, and municipal government.`}
         </p>
       </div>
 
@@ -133,12 +219,23 @@ export default function ChatPage() {
               className={`max-w-[85%] rounded-lg px-4 py-3 ${
                 msg.role === "user"
                   ? "bg-blue-600 text-white"
-                  : "border border-gray-200 bg-white text-gray-800"
+                  : msg.isError
+                    ? "border border-amber-200 bg-amber-50 text-amber-900"
+                    : "border border-gray-200 bg-white text-gray-800"
               }`}
             >
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {msg.content}
+              <div className="prose prose-sm max-w-none text-inherit [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_table]:text-xs [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_hr]:my-3">
+                {msg.role === "user" || msg.isError ? (
+                  <span className="whitespace-pre-wrap text-sm">{msg.content}</span>
+                ) : (
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                )}
               </div>
+              {msg.detail && (
+                <div className="mt-2 rounded bg-amber-100 px-2 py-1 font-mono text-[11px] text-amber-700">
+                  {msg.detail}
+                </div>
+              )}
 
               {/* Source citations */}
               {msg.sources && msg.sources.length > 0 && (
@@ -146,11 +243,20 @@ export default function ChatPage() {
                   <p className="text-xs font-medium text-gray-500">Sources:</p>
                   <div className="mt-1 space-y-1">
                     {msg.sources.map((src) => (
-                      <div
-                        key={src.index}
-                        className="text-xs text-gray-400"
-                      >
-                        [{src.index}] {src.section_path || "Unknown source"}{" "}
+                      <div key={src.index} className="text-xs text-gray-400">
+                        [{src.index}]{" "}
+                        {src.url ? (
+                          <a
+                            href={src.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 underline hover:text-blue-700"
+                          >
+                            {src.section_path || "Source"}
+                          </a>
+                        ) : (
+                          src.section_path || "Unknown source"
+                        )}{" "}
                         <span className="text-gray-300">
                           ({src.jurisdiction})
                         </span>
@@ -165,9 +271,15 @@ export default function ChatPage() {
                 </div>
               )}
 
-              {/* Model tier indicator (subtle, for debugging) */}
+              {/* Model tier + question type indicators */}
               {msg.tier && (
-                <div className="mt-2 text-right">
+                <div className="mt-2 flex items-center justify-end gap-1.5">
+                  {msg.questionType && (
+                    <span className="inline-block rounded bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-400">
+                      {QUESTION_TYPE_LABELS[msg.questionType] ||
+                        msg.questionType}
+                    </span>
+                  )}
                   <span
                     className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${
                       msg.tier === "frontier"
@@ -175,7 +287,7 @@ export default function ChatPage() {
                         : "bg-gray-50 text-gray-400"
                     }`}
                   >
-                    {msg.tier === "frontier" ? "Deep analysis" : "Quick answer"}
+                    {TIER_LABELS[msg.tier] || msg.tier}
                   </span>
                 </div>
               )}
@@ -183,7 +295,20 @@ export default function ChatPage() {
           </div>
         ))}
 
-        {loading && (
+        {/* Streaming message */}
+        {loading && streamingContent && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-800">
+              <div className="prose prose-sm max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm">
+                <ReactMarkdown>{streamingContent}</ReactMarkdown>
+                <span className="inline-block h-4 w-1 animate-pulse bg-blue-400" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator (before streaming starts) */}
+        {loading && !streamingContent && (
           <div className="flex justify-start">
             <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
               <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -223,7 +348,8 @@ export default function ChatPage() {
           </button>
         </div>
         <p className="mt-2 text-center text-[10px] text-gray-400">
-          CivicLens provides information, not legal advice. Always consult an attorney for legal guidance.
+          CivicLens provides information, not legal advice. Always consult an
+          attorney for legal guidance.
         </p>
       </div>
     </div>

@@ -6,6 +6,7 @@ node_modules/
 # Next.js
 .next/
 out/
+*.tsbuildinfo
 
 # Production
 build/
@@ -51,6 +52,10 @@ data/
 
 # LegiScan API response cache
 .cache/
+
+# Gardener (ephemeral audit report — context file is tracked)
+.gardener-report.json
+playwright-report/
 
 # Debug
 npm-debug.log*

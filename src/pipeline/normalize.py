@@ -14,19 +14,36 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date
-from typing import Any, Callable
+from typing import Callable
 
+from src.lib.config import (
+    get_county_config,
+    get_municipal_config,
+    get_scraper_config,
+    get_state_config,
+)
 from src.lib.models import (
-    LegislativeItem,
     CodeSection,
     JurisdictionLevel,
+    LegislativeItem,
     LegislativeStatus,
     LegislativeType,
 )
-from src.lib.supabase import get_supabase_client
+import httpx
+
+from src.lib.supabase import (
+    get_supabase_client,
+    start_ingestion_run,
+    complete_ingestion_run,
+)
+from src.pipeline.validate import validate_code_section, validate_legislative_item
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1.0  # seconds
 
 
 # ─── Status Mapping ─────────────────────────────────────────────────────
@@ -51,6 +68,44 @@ BELAIR_STATUS_MAP: dict[str, LegislativeStatus] = {
     "EXPIRED": LegislativeStatus.EXPIRED,
     "REJECTED": LegislativeStatus.REJECTED,
     "UNKNOWN": LegislativeStatus.UNKNOWN,
+}
+
+# Maps county council status strings (from the ASP.NET bills tracker) to
+# the unified LegislativeStatus enum.
+HARFORD_STATUS_MAP: dict[str, LegislativeStatus] = {
+    "Introduced": LegislativeStatus.INTRODUCED,
+    "Referred to Committee": LegislativeStatus.IN_COMMITTEE,
+    "In Committee": LegislativeStatus.IN_COMMITTEE,
+    "Passed": LegislativeStatus.ENACTED,
+    "Adopted": LegislativeStatus.ENACTED,
+    "Enacted": LegislativeStatus.ENACTED,
+    "Failed": LegislativeStatus.REJECTED,
+    "Withdrawn": LegislativeStatus.REJECTED,
+    "Tabled": LegislativeStatus.TABLED,
+    "Pending": LegislativeStatus.PENDING,
+    "Unknown": LegislativeStatus.UNKNOWN,
+}
+
+# Maps LegiScan numeric status codes to the unified LegislativeStatus enum.
+# Reference: https://legiscan.com/legiscan (Status Codes section)
+LEGISCAN_STATUS_MAP: dict[int, LegislativeStatus] = {
+    1: LegislativeStatus.INTRODUCED,           # Introduced
+    2: LegislativeStatus.PASSED_ONE_CHAMBER,   # Engrossed (passed originating chamber)
+    3: LegislativeStatus.ENACTED,              # Enrolled (passed both chambers)
+    4: LegislativeStatus.ENACTED,              # Passed (signed into law)
+    5: LegislativeStatus.VETOED,               # Vetoed
+    6: LegislativeStatus.REJECTED,             # Failed/Dead
+    10: LegislativeStatus.ENACTED,             # Chaptered (officially codified)
+}
+
+# Maps LegiScan numeric bill type IDs to the unified LegislativeType enum.
+LEGISCAN_TYPE_MAP: dict[int, LegislativeType] = {
+    1: LegislativeType.BILL,           # Bill
+    2: LegislativeType.RESOLUTION,     # Resolution
+    3: LegislativeType.RESOLUTION,     # Concurrent Resolution
+    4: LegislativeType.RESOLUTION,     # Joint Resolution
+    5: LegislativeType.RESOLUTION,     # Joint Resolution (Enrolled)
+    6: LegislativeType.EXECUTIVE_ORDER,  # Executive Order
 }
 
 
@@ -104,7 +159,7 @@ def normalize_openstates_bill(bronze_id: str, raw: dict) -> LegislativeItem:
         bronze_id=bronze_id,
         source_id=bill.get("identifier", ""),
         jurisdiction=JurisdictionLevel.STATE,
-        body="Maryland General Assembly",
+        body=get_state_config()["body"],
         item_type=item_type,
         title=bill.get("title", "Untitled"),
         summary=summary,
@@ -117,13 +172,31 @@ def normalize_openstates_bill(bronze_id: str, raw: dict) -> LegislativeItem:
     )
 
 
-def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
+def normalize_belair_legislation(
+    bronze_id: str, raw: dict, metadata: dict | None = None,
+) -> LegislativeItem:
     """
-    Normalize a Bel Air legislation entry to a LegislativeItem.
+    Normalize a municipal legislation entry to a LegislativeItem.
+
+    Handles two raw_content formats:
+    - JSON metadata (legacy, or when PDF extraction fails)
+    - Raw PDF text (when PDF was downloaded and extracted)
+
+    When raw_content is PDF text, metadata fields come from raw_metadata.
 
     @spec DATA-PIPE-002
     """
-    entry = json.loads(raw) if isinstance(raw, str) else raw
+    metadata = metadata or {}
+
+    # Detect if raw_content is PDF text or JSON metadata
+    if metadata.get("pdf_extracted"):
+        # raw is the PDF text — get metadata from raw_metadata
+        entry = metadata
+        summary = raw[:2000] if isinstance(raw, str) else None
+    else:
+        # raw is JSON metadata (legacy format)
+        entry = json.loads(raw) if isinstance(raw, str) else raw
+        summary = None
 
     item_type_str = entry.get("item_type", "other")
     item_type = {
@@ -138,11 +211,105 @@ def normalize_belair_legislation(bronze_id: str, raw: dict) -> LegislativeItem:
         bronze_id=bronze_id,
         source_id=entry.get("number", ""),
         jurisdiction=JurisdictionLevel.MUNICIPAL,
-        body="Town of Bel Air Board of Commissioners",
+        body=(get_municipal_config() or {}).get("body", "Municipal Government"),
         item_type=item_type,
         title=entry.get("title", "Untitled"),
+        summary=summary,
         status=status,
         source_url=entry.get("pdf_url") or entry.get("source_url"),
+    )
+
+
+def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
+    """
+    Normalize a county council bill to a LegislativeItem.
+
+    @spec DATA-PIPE-030
+    """
+    bill = json.loads(raw) if isinstance(raw, str) else raw
+
+    status_str = bill.get("status", "Unknown")
+    # Try exact match first, then case-insensitive prefix match
+    status = HARFORD_STATUS_MAP.get(status_str)
+    if status is None:
+        status_lower = status_str.lower()
+        for key, val in HARFORD_STATUS_MAP.items():
+            if status_lower.startswith(key.lower()):
+                status = val
+                break
+        else:
+            status = LegislativeStatus.UNKNOWN
+
+    # County bills may be ordinances or resolutions
+    title = bill.get("title", "Untitled")
+    title_lower = title.lower()
+    if "resolution" in title_lower:
+        item_type = LegislativeType.RESOLUTION
+    elif "ordinance" in title_lower:
+        item_type = LegislativeType.ORDINANCE
+    else:
+        item_type = LegislativeType.BILL
+
+    return LegislativeItem(
+        bronze_id=bronze_id,
+        source_id=bill.get("bill_number", ""),
+        jurisdiction=JurisdictionLevel.COUNTY,
+        body=(get_county_config() or {}).get("body", "County Government"),
+        item_type=item_type,
+        title=title,
+        status=status,
+        introduced_date=_parse_date(bill.get("introduced_date")),
+        last_action_date=_parse_date(bill.get("last_action_date")),
+        last_action=bill.get("last_action"),
+        sponsors=bill.get("sponsors", []),
+        source_url=bill.get("detail_url"),
+    )
+
+
+def normalize_legiscan_bill(bronze_id: str, raw: dict) -> LegislativeItem:
+    """
+    Normalize a LegiScan bill record to a LegislativeItem.
+
+    @spec DATA-PIPE-001
+    """
+    bill = json.loads(raw) if isinstance(raw, str) else raw
+
+    # Map numeric status code to unified status
+    status_id = bill.get("status", 0)
+    status = LEGISCAN_STATUS_MAP.get(status_id, LegislativeStatus.UNKNOWN)
+
+    # Map numeric bill type to unified type
+    type_id = bill.get("bill_type_id", 1)
+    item_type = LEGISCAN_TYPE_MAP.get(type_id, LegislativeType.BILL)
+
+    # Extract sponsor names from sponsors list
+    sponsors = [
+        s.get("name", "") for s in bill.get("sponsors", []) if s.get("name")
+    ]
+
+    # Extract subject names as tags
+    tags = [
+        s.get("subject_name", "") for s in bill.get("subjects", []) if s.get("subject_name")
+    ]
+
+    # Prefer state_link (official legislature URL) over LegiScan URL
+    source_url = bill.get("state_link") or bill.get("url")
+
+    return LegislativeItem(
+        bronze_id=bronze_id,
+        source_id=bill.get("bill_number", ""),
+        jurisdiction=JurisdictionLevel.STATE,
+        body=get_state_config()["body"],
+        item_type=item_type,
+        title=bill.get("title", "Untitled"),
+        summary=bill.get("description") or None,
+        status=status,
+        introduced_date=_parse_date(bill.get("intro_date")),
+        last_action_date=_parse_date(bill.get("last_action_date")),
+        last_action=bill.get("last_action") or None,
+        sponsors=sponsors,
+        source_url=source_url,
+        tags=tags,
     )
 
 
@@ -150,16 +317,23 @@ def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> Code
     """
     Normalize an eCode360 section to a CodeSection.
 
-    @spec DATA-PIPE-003
+    @spec DATA-PIPE-020, DATA-PIPE-021, DATA-PIPE-022, DATA-PIPE-023
     """
     municipality_code = metadata.get("municipality_code", "")
 
-    if municipality_code == "BE2811":
+    _muni_cfg = get_scraper_config("municipal", "ecode360")
+    _cty_cfg = get_scraper_config("county", "ecode360")
+    _muni_code = _muni_cfg["code"] if _muni_cfg else None
+    _cty_code = _cty_cfg["code"] if _cty_cfg else None
+
+    if _muni_code and municipality_code == _muni_code:
         jurisdiction = JurisdictionLevel.MUNICIPAL
-        code_source = "Town of Bel Air Code"
-    elif municipality_code == "HA0904":
+        muni = get_municipal_config()
+        code_source = f"{muni['name']} Code" if muni else f"Code {municipality_code}"
+    elif _cty_code and municipality_code == _cty_code:
         jurisdiction = JurisdictionLevel.COUNTY
-        code_source = "Harford County Code"
+        cty = get_county_config()
+        code_source = f"{cty['name']} Code" if cty else f"Code {municipality_code}"
     else:
         jurisdiction = JurisdictionLevel.MUNICIPAL
         code_source = f"Code {municipality_code}"
@@ -188,7 +362,8 @@ def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> Code
 NORMALIZERS: dict[str, Callable] = {
     "openstates": normalize_openstates_bill,
     "belair_legislation": normalize_belair_legislation,
-    # "legiscan": normalize_legiscan_bill,  # TODO
+    "harford_bills": normalize_harford_bills,
+    "legiscan": normalize_legiscan_bill,
     # "ecode360_belair": normalize_ecode360_section,  # Uses different signature
     # "ecode360_harford": normalize_ecode360_section,
 }
@@ -205,61 +380,136 @@ def run_normalization(source: str | None = None) -> None:
     """
     db = get_supabase_client()
 
-    # Query Bronze records that need normalization
+    # Only process Bronze records fetched/updated since the last successful
+    # normalization run, rather than re-normalizing everything each time.
+    last_run = (
+        db.table("ingestion_runs")
+        .select("completed_at")
+        .eq("source", "normalize")
+        .eq("status", "success")
+        .order("completed_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    since = last_run.data[0]["completed_at"] if last_run.data else None
+
     query = db.table("bronze_documents").select("*")
     if source:
         query = query.eq("source", source)
+    if since:
+        query = query.gt("fetched_at", since)
 
-    # TODO: Track which Bronze records have been normalized to avoid reprocessing.
-    # For MVP, re-normalize everything on each run (idempotent via upsert).
-    result = query.execute()
+    all_rows = fetch_all_rows(query)
 
-    if not result.data:
+    if not all_rows:
         logger.info(f"No Bronze records to normalize for source={source or 'all'}")
         return
 
-    logger.info(f"Normalizing {len(result.data)} Bronze records")
+    logger.info(f"Normalizing {len(all_rows)} Bronze records")
 
-    for row in result.data:
-        row_source = row["source"]
+    run_id = start_ingestion_run(db, "normalize")
 
-        if row_source in ("ecode360_belair", "ecode360_harford"):
-            # Code sections use a different normalization path
-            section = normalize_ecode360_section(
-                bronze_id=row["id"],
-                raw=row["raw_content"],
-                metadata=row.get("raw_metadata", {}),
+    try:
+        normalized = 0
+        for row in all_rows:
+            row_source = row["source"]
+
+            if row_source in ("ecode360_belair", "ecode360_harford"):
+                section = normalize_ecode360_section(
+                    bronze_id=row["id"],
+                    raw=row["raw_content"],
+                    metadata=row.get("raw_metadata", {}),
+                )
+                if validate_code_section(section):
+                    _upsert_code_section(db, section)
+                    normalized += 1
+
+            elif row_source in NORMALIZERS:
+                normalizer = NORMALIZERS[row_source]
+                kwargs: dict = {"bronze_id": row["id"], "raw": row["raw_content"]}
+                if row_source == "belair_legislation":
+                    kwargs["metadata"] = row.get("raw_metadata", {})
+                item = normalizer(**kwargs)
+                if validate_legislative_item(item):
+                    _upsert_legislative_item(db, item)
+                    normalized += 1
+
+            else:
+                logger.warning(f"No normalizer for source: {row_source}")
+
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=len(all_rows),
+            records_new=normalized,
+        )
+        logger.info(f"Normalization complete: {normalized}/{len(all_rows)} records processed")
+
+    except Exception as e:
+        logger.error(f"Normalization failed: {e}")
+        complete_ingestion_run(db, run_id, error_message=str(e))
+        raise
+
+
+def fetch_all_rows(query) -> list[dict]:
+    """Fetch all rows from a Supabase query, paginating past the default 1000-row limit."""
+    page_size = 1000
+    offset = 0
+    all_rows: list[dict] = []
+    while True:
+        result = query.range(offset, offset + page_size - 1).execute()
+        rows = result.data or []
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_rows
+
+
+def _execute_with_retry(query) -> None:
+    """Execute a Supabase query with retry on transient HTTP errors."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            query.execute()
+            return
+        except httpx.RemoteProtocolError:
+            if attempt == MAX_RETRIES - 1:
+                raise
+            wait = RETRY_BACKOFF_BASE * (2 ** attempt)
+            logger.warning(
+                f"Transient HTTP error, retrying in {wait}s "
+                f"(attempt {attempt + 1}/{MAX_RETRIES})"
             )
-            _upsert_code_section(db, section)
-
-        elif row_source in NORMALIZERS:
-            normalizer = NORMALIZERS[row_source]
-            item = normalizer(bronze_id=row["id"], raw=row["raw_content"])
-            _upsert_legislative_item(db, item)
-
-        else:
-            logger.warning(f"No normalizer for source: {row_source}")
+            time.sleep(wait)
 
 
 def _upsert_legislative_item(db, item: LegislativeItem) -> None:
-    """Write a LegislativeItem to the Silver layer."""
+    """Write a LegislativeItem to the Silver layer.
+
+    When the same bill exists from multiple sources (e.g. Open States and
+    LegiScan), merge fields so that non-null incoming values update the
+    record but existing non-null values are not blanked out.
+    """
     row = item.model_dump(mode="json")
     row.pop("id", None)  # Let Postgres generate the ID on insert
-    db.table("legislative_items").upsert(
-        row,
-        on_conflict="source_id,jurisdiction,body",
-    ).execute()
+    _execute_with_retry(
+        db.table("legislative_items").upsert(
+            row,
+            on_conflict="source_id,jurisdiction,body",
+        )
+    )
 
 
 def _upsert_code_section(db, section: CodeSection) -> None:
-    """Write a CodeSection to the Silver layer."""
+    """Write a CodeSection to the Silver layer. @spec DATA-PIPE-031"""
     row = section.model_dump(mode="json")
     row.pop("id", None)
     row.pop("parent_section_id", None)  # Handle hierarchy separately
-    db.table("code_sections").upsert(
-        row,
-        on_conflict="code_source,chapter,section",
-    ).execute()
+    _execute_with_retry(
+        db.table("code_sections").upsert(
+            row,
+            on_conflict="code_source,chapter,section",
+        )
+    )
 
 
 def _parse_date(date_str: str | None) -> date | None:

@@ -2,8 +2,7 @@
 eCode360 HTML scraper for municipal and county codes.
 
 Extracts the hierarchical structure of codified law from General Code's
-eCode360 platform. Both the Town of Bel Air (BE2811) and Harford County
-(HA0904) codes are hosted here.
+eCode360 platform. Municipality codes are configured in civic-lens.config.json.
 
 The scraper preserves section hierarchy (chapter → article → section)
 and generates section_path breadcrumbs for RAG retrieval context.
@@ -18,23 +17,25 @@ import time
 from dataclasses import dataclass
 from typing import Generator
 
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 
-from src.lib.config import get_config
+from src.lib.config import get_scraper_config
 from src.lib.supabase import (
-    get_supabase_client,
-    upsert_bronze_document,
-    start_ingestion_run,
     complete_ingestion_run,
+    get_supabase_client,
+    start_ingestion_run,
+    upsert_bronze_document,
 )
 
 logger = logging.getLogger(__name__)
 
 # eCode360 municipality codes
 ECODE360_BASE = "https://ecode360.com"
-BEL_AIR_CODE = "BE2811"       # Town of Bel Air
-HARFORD_COUNTY_CODE = "HA0904"  # Harford County
+_muni_ecode = get_scraper_config("municipal", "ecode360")
+_county_ecode = get_scraper_config("county", "ecode360")
+BEL_AIR_CODE = _muni_ecode["code"] if _muni_ecode else None
+HARFORD_COUNTY_CODE = _county_ecode["code"] if _county_ecode else None
 
 # Polite crawling: 1 second between requests
 REQUEST_DELAY = 1.0
@@ -65,10 +66,7 @@ class ECode360Scraper:
     def __init__(self, municipality_code: str):
         self.municipality_code = municipality_code
         self.base_url = f"{ECODE360_BASE}/{municipality_code}"
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "CivicLens/0.1 (civic transparency project; contact: github.com/YOUR_USERNAME/civiclens)"
-        })
+        self.session = cloudscraper.create_scraper()
 
     def fetch_table_of_contents(self) -> list[CodeEntry]:
         """
@@ -162,10 +160,12 @@ class ECode360Scraper:
 
 def determine_source_name(municipality_code: str) -> str:
     """Map municipality code to a human-readable source name."""
-    return {
-        BEL_AIR_CODE: "ecode360_belair",
-        HARFORD_COUNTY_CODE: "ecode360_harford",
-    }.get(municipality_code, f"ecode360_{municipality_code.lower()}")
+    names = {}
+    if BEL_AIR_CODE:
+        names[BEL_AIR_CODE] = "ecode360_belair"
+    if HARFORD_COUNTY_CODE:
+        names[HARFORD_COUNTY_CODE] = "ecode360_harford"
+    return names.get(municipality_code, f"ecode360_{municipality_code.lower()}")
 
 
 def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
@@ -182,13 +182,15 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
     try:
         chapters = scraper.fetch_table_of_contents()
         fetched = 0
+        new = 0
+        updated = 0
 
         for chapter in chapters:
             for section in scraper.fetch_chapter_sections(chapter):
                 if not section.content:
                     continue
 
-                upsert_bronze_document(
+                result = upsert_bronze_document(
                     db,
                     source=source_name,
                     source_id=section.code_id or section.url,
@@ -203,10 +205,26 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
                     url=section.url,
                 )
                 fetched += 1
-                logger.info(f"Ingested: {section.title}")
+                status = result.get("status", "")
+                if status == "new":
+                    new += 1
+                    logger.info(f"New section: {section.title}")
+                elif status == "updated":
+                    updated += 1
+                    logger.info(f"Updated section: {section.title}")
+                else:
+                    logger.debug(f"Skipped unchanged section: {section.title}")
 
-        complete_ingestion_run(db, run_id, records_fetched=fetched)
-        logger.info(f"eCode360 ingestion complete: {fetched} sections from {municipality_code}")
+        complete_ingestion_run(
+            db, run_id,
+            records_fetched=fetched,
+            records_new=new,
+            records_updated=updated,
+        )
+        logger.info(
+            f"eCode360 ingestion complete: {fetched} fetched, {new} new, "
+            f"{updated} updated from {municipality_code}"
+        )
 
     except Exception as e:
         logger.error(f"eCode360 ingestion failed: {e}")
@@ -215,6 +233,22 @@ def ingest_municipal_code(municipality_code: str = BEL_AIR_CODE) -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO)
-    # Default: scrape Bel Air town code
-    ingest_municipal_code(BEL_AIR_CODE)
+    parser = argparse.ArgumentParser(description="Scrape an eCode360 municipal code")
+    available_codes = [c for c in [BEL_AIR_CODE, HARFORD_COUNTY_CODE] if c]
+    parser.add_argument(
+        "--municipality",
+        default=available_codes[0] if available_codes else None,
+        choices=available_codes or None,
+        help=(
+            f"Municipality code to scrape "
+            f"(default: {available_codes[0] if available_codes else 'none configured'})"
+        ),
+    )
+    args = parser.parse_args()
+    if args.municipality:
+        ingest_municipal_code(args.municipality)
+    else:
+        logger.error("No municipality codes configured in civic-lens.config.json")

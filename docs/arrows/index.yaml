@@ -1,6 +1,6 @@
 schema_version: 1
-last_updated: 2026-03-14
-# LLDs and EARS specs complete for all arrows as of 2026-03-14. Next: Implementation.
+last_updated: 2026-03-30
+# Phases 1-7 implemented and deployed as of 2026-03-17. Phase 8 starting.
 
 # Arrow of Intent Index — CivicLens
 #
@@ -8,85 +8,95 @@ last_updated: 2026-03-14
 # Read this file first to understand project status and navigate.
 
 arrows:
-  infrastructure:
+  ingestion-federal:
     status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    sampled: 2026-03-19
+    audited: 2026-03-19
+    blocks: [data-pipeline]
+    blockedBy: [infrastructure]
+    detail: ingestion-federal.md
+    next: "Phase 9: congress.py, usa_spending.py, govinfo.py — register api.data.gov key"
+    drift: null
+
+  infrastructure:
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [ingestion-apis, ingestion-scraping]
     blockedBy: []
     detail: infrastructure.md
-    next: "Create Supabase project, define Bronze/Silver/Gold schemas, configure Vercel + GitHub Actions"
-    drift: null
+    next: "Phase 9 hardening: freshness indicators, cost monitoring"
+    drift: "RLS policies absent from migrations (INFRA-SEC-001/002/003 unimplemented); config raises bare KeyError on missing env vars (INFRA-ENV-003)"
 
   ingestion-apis:
-    status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    status: IMPLEMENTED
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: [data-pipeline]
     blockedBy: [infrastructure]
     detail: ingestion-apis.md
-    next: "Implement Open States and LegiScan API clients; populate Bronze layer with MD state bills"
-    drift: null
+    next: "Phase 9: LegiScan scheduled CI job; ArcGIS/YouTube clients deferred"
+    drift: "legiscan.py implemented but unscheduled in CI (workflow_dispatch only); test_legiscan.py missing; INGEST-API-050-063 (MGA/ArcGIS) are Phase 9 items, not yet built; spec file updated with [x] for 001-041"
 
   ingestion-scraping:
-    status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: [ingestion-pdf]
     blockedBy: [infrastructure]
     detail: ingestion-scraping.md
-    next: "Build eCode360 HTML scraper for Bel Air town code; CivicPlus AgendaCenter scrapers"
-    drift: null
+    next: "Phase 9: civicplus RSS feeds (030-033); ZBA scraper (045-047); test_ecode360.py and test_belair_legislation.py missing"
+    drift: "INGEST-SCRAPE-001-021 implemented (ecode360, belair_legislation, change detection) — spec file updated [x]; 030-033 RSS and 045-047 ZBA are Phase 9 (not yet built); civicplus_agenda.py stub references now-RSS specs 030-032"
 
   ingestion-pdf:
-    status: MAPPED
+    status: DEFERRED
     sampled: 2026-03-14
-    audited: null
+    audited: 2026-03-17
     blocks: []
     blockedBy: [ingestion-scraping]
     detail: ingestion-pdf.md
-    next: "Build PDF text extraction pipeline for meeting minutes and agendas"
+    next: "Phase 9+: PDF extraction for meeting minutes once AgendaCenter scraping is in place"
     drift: null
 
   data-pipeline:
-    status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    status: PARTIALLY_IMPLEMENTED
+    sampled: 2026-03-19
+    audited: 2026-03-19
     blocks: [embeddings, dashboard]
     blockedBy: [ingestion-apis]
     detail: data-pipeline.md
-    next: "Build Bronze→Silver normalization; legislative_item and code_section schemas"
-    drift: null
+    next: "Phase 9: LegiScan normalizer; test_silver_transforms.py; LLM enrichment (DATA-PIPE-050/051)"
+    drift: "validate.py created (run 5) — DATA-PIPE-040/041/042 now implemented and integrated into run_normalization(); legiscan normalizer commented out pending Phase 9"
 
   embeddings:
-    status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    status: IMPLEMENTED
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: [chat]
     blockedBy: [data-pipeline]
     detail: embeddings.md
-    next: "Implement section-aware chunking, embedding generation, pgvector storage"
-    drift: null
+    next: "Phase 9: Retrieval quality evaluation (20-question test set, recall@8)"
+    drift: "embeddings.md arrow detail file updated (was showing MAPPED/UNMAPPED); EMBED-GEN-002 (MiniLM) intentionally deferred — embedder raises ValueError on unsupported model; EMBED-EVAL-001/002 deferred to Phase 9"
 
   chat:
-    status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    status: IMPLEMENTED
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: []
     blockedBy: [embeddings]
     detail: chat.md
-    next: "Build RAG retrieval pipeline, model routing heuristic, citation generation"
-    drift: null
+    next: "Phase 9: Rate limiting on /api/chat; cost monitoring; Stats API EARS specs"
+    drift: "chat.md arrow detail file updated (was showing MAPPED/UNMAPPED); chat-specs.md updated [x] for all 27 active specs; POST /api/chat still has no rate limiting (API cost exposure); Stats API shipped without EARS specs (DASH-STATS-001 through 005 needed)"
 
   dashboard:
-    status: MAPPED
-    sampled: 2026-03-14
-    audited: null
+    status: IMPLEMENTED
+    sampled: 2026-03-30
+    audited: 2026-03-30
     blocks: []
     blockedBy: [data-pipeline]
     detail: dashboard.md
-    next: "Build legislative tracker UI with jurisdiction/status/type filters"
-    drift: null
+    next: "Phase 9: Freshness indicators per source; DASH-STATS specs needed for Stats API"
+    drift: "dashboard-specs.md updated [x] for all 20 active specs; Stats API (/api/stats) shipped without EARS specs — DASH-STATS-001 through 005 to be written in Phase 9"
 
 unmapped:
   # Nothing unmapped — all domains identified in HLD are tracked above.

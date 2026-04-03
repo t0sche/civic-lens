@@ -41,7 +41,7 @@ Meeting minutes and agendas will require a different chunking approach since the
 
 ## Embedding Model Selection
 
-### Decision: Gemini text-embedding-004 (Default)
+### Decision: Gemini gemini-embedding-001 (Default)
 
 The Gemini embedding API is the default choice for three reasons:
 
