@@ -30,7 +30,7 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
-from src.lib.supabase import get_supabase_client
+from src.lib.supabase import fetch_all_rows, get_supabase_client
 from src.pipeline.validate import validate_code_section, validate_legislative_item
 
 logger = logging.getLogger(__name__)
@@ -358,15 +358,15 @@ def run_normalization(source: str | None = None) -> None:
 
     # TODO: Track which Bronze records have been normalized to avoid reprocessing.
     # For MVP, re-normalize everything on each run (idempotent via upsert).
-    result = query.execute()
+    all_rows = fetch_all_rows(query)
 
-    if not result.data:
+    if not all_rows:
         logger.info(f"No Bronze records to normalize for source={source or 'all'}")
         return
 
-    logger.info(f"Normalizing {len(result.data)} Bronze records")
+    logger.info(f"Normalizing {len(all_rows)} Bronze records")
 
-    for row in result.data:
+    for row in all_rows:
         row_source = row["source"]
 
         if row_source in ("ecode360_belair", "ecode360_harford"):
