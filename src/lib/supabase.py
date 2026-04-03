@@ -25,6 +25,25 @@ def content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+# ─── Query Helpers ─────────────────────────────────────────────────────
+
+_PAGE_SIZE = 1000  # PostgREST default row limit
+
+
+def fetch_all_rows(query) -> list[dict[str, Any]]:
+    """Paginate a Supabase query to fetch all rows beyond the 1000-row default."""
+    all_rows: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        result = query.range(offset, offset + _PAGE_SIZE - 1).execute()
+        batch = result.data or []
+        all_rows.extend(batch)
+        if len(batch) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    return all_rows
+
+
 # ─── Bronze Layer Operations ────────────────────────────────────────────
 
 

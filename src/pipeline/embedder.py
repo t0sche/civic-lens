@@ -14,11 +14,12 @@ bounded by section numbers.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from src.lib.config import get_config
 from src.lib.models import ChunkSourceType, DocumentChunk, JurisdictionLevel
-from src.lib.supabase import get_supabase_client
+from src.lib.supabase import fetch_all_rows, get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,14 @@ def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
     return embeddings
 
 
+def _legitem_source_text(item: dict) -> str:
+    """Build the text that gets embedded for a legislative item, for hashing."""
+    parts = [item["title"]]
+    if item.get("summary"):
+        parts.append(item["summary"])
+    return "\n\n".join(parts)
+
+
 # ─── Pipeline Runner ────────────────────────────────────────────────────
 
 
@@ -202,42 +211,72 @@ def run_embedding_pipeline(source_type: str | None = None) -> None:
         _embed_legislative_items(db)
 
 
-def _get_already_embedded_source_ids(db, source_type: str) -> set[str]:
-    """Return the set of source_ids that already have chunks in document_chunks."""
-    result = (
+def _get_embedded_source_hashes(db, source_type: str) -> dict[str, str]:
+    """Return {source_id: content_hash} for sources that already have chunks."""
+    rows = fetch_all_rows(
         db.table("document_chunks")
-        .select("source_id")
+        .select("source_id,metadata")
         .eq("source_type", source_type)
-        .execute()
     )
-    return {row["source_id"] for row in (result.data or [])}
+    hashes: dict[str, str] = {}
+    for row in rows:
+        sid = row["source_id"]
+        meta = row.get("metadata") or {}
+        if sid not in hashes and isinstance(meta, dict):
+            hashes[sid] = meta.get("content_hash", "")
+    return hashes
+
+
+def _content_hash_for_embedding(text: str) -> str:
+    """SHA-256 hash of the text used to generate an embedding."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _delete_chunks_for_source(db, source_type: str, source_id: str) -> None:
+    """Delete all existing chunks for a given source record."""
+    db.table("document_chunks").delete().eq(
+        "source_type", source_type
+    ).eq("source_id", source_id).execute()
 
 
 def _embed_code_sections(db) -> None:
-    """Chunk and embed code sections that haven't been embedded yet."""
-    already_embedded = _get_already_embedded_source_ids(db, ChunkSourceType.CODE_SECTION.value)
+    """Chunk and embed code sections, re-embedding if content has changed."""
+    embedded_hashes = _get_embedded_source_hashes(db, ChunkSourceType.CODE_SECTION.value)
 
-    result = db.table("code_sections").select("*").execute()
+    all_sections = fetch_all_rows(db.table("code_sections").select("*"))
 
-    if not result.data:
+    if not all_sections:
         logger.info("No code sections to embed")
         return
 
-    # Filter to only unembedded sections
-    pending = [s for s in result.data if s["id"] not in already_embedded]
+    pending = []
+    stale = []
+    for s in all_sections:
+        sid = s["id"]
+        current_hash = _content_hash_for_embedding(s["content"])
+        if sid not in embedded_hashes:
+            pending.append(s)
+        elif embedded_hashes[sid] != current_hash:
+            stale.append(s)
 
-    if not pending:
+    if not pending and not stale:
         logger.info(
-            f"All {len(result.data)} code sections already embedded, nothing to do"
+            f"All {len(all_sections)} code sections already embedded, nothing to do"
         )
         return
 
+    if stale:
+        logger.info(f"Re-embedding {len(stale)} code sections with changed content")
+        for section in stale:
+            _delete_chunks_for_source(db, ChunkSourceType.CODE_SECTION.value, section["id"])
+
+    to_embed = pending + stale
     logger.info(
-        f"Embedding {len(pending)} new code sections "
-        f"({len(result.data) - len(pending)} already embedded)"
+        f"Embedding {len(to_embed)} code sections "
+        f"({len(pending)} new, {len(stale)} updated)"
     )
 
-    for section in pending:
+    for section in to_embed:
         chunks = chunk_code_section(
             section_id=section["id"],
             content=section["content"],
@@ -248,44 +287,64 @@ def _embed_code_sections(db) -> None:
         if not chunks:
             continue
 
-        # Generate embeddings in batch
+        c_hash = _content_hash_for_embedding(section["content"])
         texts = [c.chunk_text for c in chunks]
         embeddings = generate_embeddings(texts)
 
         for chunk, embedding in zip(chunks, embeddings):
             chunk.embedding = embedding
+            chunk.metadata = {**(chunk.metadata or {}), "content_hash": c_hash}
             row = chunk.model_dump(mode="json")
             row.pop("id", None)
-            # pgvector expects a list, which JSON serializes correctly
-            db.table("document_chunks").insert(row).execute()
+            db.table("document_chunks").upsert(
+                row, on_conflict="source_type,source_id,chunk_index"
+            ).execute()
 
-    logger.info(f"Embedded {len(pending)} code sections")
+    logger.info(f"Embedded {len(to_embed)} code sections")
 
 
 def _embed_legislative_items(db) -> None:
-    """Chunk and embed legislative items that haven't been embedded yet."""
-    already_embedded = _get_already_embedded_source_ids(db, ChunkSourceType.LEGISLATIVE_ITEM.value)
+    """Chunk and embed legislative items, re-embedding if content has changed."""
+    embedded_hashes = _get_embedded_source_hashes(db, ChunkSourceType.LEGISLATIVE_ITEM.value)
 
-    result = db.table("legislative_items").select("*").execute()
+    all_items = fetch_all_rows(db.table("legislative_items").select("*"))
 
-    if not result.data:
+    if not all_items:
         logger.info("No legislative items to embed")
         return
 
-    pending = [i for i in result.data if i["id"] not in already_embedded]
+    pending = []
+    stale = []
+    for i in all_items:
+        sid = i["id"]
+        source_text = _legitem_source_text(i)
+        current_hash = _content_hash_for_embedding(source_text)
+        if sid not in embedded_hashes:
+            pending.append(i)
+        elif embedded_hashes[sid] != current_hash:
+            stale.append(i)
 
-    if not pending:
+    if not pending and not stale:
         logger.info(
-            f"All {len(result.data)} legislative items already embedded, nothing to do"
+            f"All {len(all_items)} legislative items already embedded, nothing to do"
         )
         return
 
+    if stale:
+        logger.info(f"Re-embedding {len(stale)} legislative items with changed content")
+        for item in stale:
+            _delete_chunks_for_source(db, ChunkSourceType.LEGISLATIVE_ITEM.value, item["id"])
+
+    to_embed = pending + stale
     logger.info(
-        f"Embedding {len(pending)} new legislative items "
-        f"({len(result.data) - len(pending)} already embedded)"
+        f"Embedding {len(to_embed)} legislative items "
+        f"({len(pending)} new, {len(stale)} updated)"
     )
 
-    for item in pending:
+    for item in to_embed:
+        source_text = _legitem_source_text(item)
+        c_hash = _content_hash_for_embedding(source_text)
+
         chunks = chunk_legislative_item(
             item_id=item["id"],
             title=item["title"],
@@ -299,11 +358,14 @@ def _embed_legislative_items(db) -> None:
 
         for chunk, embedding in zip(chunks, embeddings):
             chunk.embedding = embedding
+            chunk.metadata = {**(chunk.metadata or {}), "content_hash": c_hash}
             row = chunk.model_dump(mode="json")
             row.pop("id", None)
-            db.table("document_chunks").insert(row).execute()
+            db.table("document_chunks").upsert(
+                row, on_conflict="source_type,source_id,chunk_index"
+            ).execute()
 
-    logger.info(f"Embedded {len(pending)} legislative items")
+    logger.info(f"Embedded {len(to_embed)} legislative items")
 
 
 if __name__ == "__main__":
