@@ -24,6 +24,10 @@ For bug fixes: verify existing docs align before changing code.
 - **Database:** Supabase (Postgres + pgvector) — `supabase/migrations/`
 - **CI/CD:** GitHub Actions — `.github/workflows/`
 
+## Logic Flow Documentation
+
+See **[`docs/LOGIC_FLOW.md`](docs/LOGIC_FLOW.md)** for the complete application logic flow with Mermaid diagrams and code snippets. **Update this document** whenever control flow, function signatures, data paths, or schema changes are made.
+
 ## Key Design Decisions
 
 - **Model routing:** Simple queries → Gemini Flash (free); complex queries → Claude API (Sonnet)

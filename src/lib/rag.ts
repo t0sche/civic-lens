@@ -12,6 +12,7 @@
  */
 
 import { createServerClient } from "./supabase-client";
+import { getLocality, buildLocalityDescription } from "./locality";
 
 export interface RetrievedChunk {
   id: string;
@@ -22,12 +23,15 @@ export interface RetrievedChunk {
   source_id: string;
   similarity: number;
   metadata: Record<string, unknown>;
+  source_url: string | null;
 }
 
 export interface RAGContext {
   chunks: RetrievedChunk[];
   uniqueDocCount: number;
   jurisdictions: string[];
+  /** Average similarity score across retrieved chunks (0-1). Used for routing confidence. */
+  avgSimilarity: number;
 }
 
 /**
@@ -37,13 +41,14 @@ export interface RAGContext {
  */
 async function embedQuery(query: string): Promise<number[]> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key=${process.env.GOOGLE_AI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GOOGLE_AI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         content: { parts: [{ text: query }] },
         taskType: "RETRIEVAL_QUERY",
+        outputDimensionality: 768,
       }),
     }
   );
@@ -87,10 +92,21 @@ export async function retrieveContext(
 
   if (error) {
     console.error("Vector search failed:", error);
-    return { chunks: [], uniqueDocCount: 0, jurisdictions: [] };
+    return { chunks: [], uniqueDocCount: 0, jurisdictions: [], avgSimilarity: 0 };
   }
 
-  const chunks: RetrievedChunk[] = (data || []).map((row: any) => ({
+  type RpcRow = {
+    id: string;
+    chunk_text: string;
+    section_path: string | null;
+    jurisdiction: string;
+    source_type: string;
+    source_id: string;
+    similarity: number;
+    metadata: Record<string, unknown> | null;
+    source_url: string | null;
+  };
+  const chunks: RetrievedChunk[] = (data || []).map((row: RpcRow) => ({
     id: row.id,
     chunk_text: row.chunk_text,
     section_path: row.section_path,
@@ -99,23 +115,29 @@ export async function retrieveContext(
     source_id: row.source_id,
     similarity: row.similarity,
     metadata: row.metadata || {},
+    source_url: row.source_url ?? null,
   }));
 
   // Compute context metadata for model routing
   const uniqueDocIds = new Set(chunks.map((c) => c.source_id));
   const jurisdictions = Array.from(new Set(chunks.map((c) => c.jurisdiction)));
+  const avgSimilarity =
+    chunks.length > 0
+      ? chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length
+      : 0;
 
   return {
     chunks,
     uniqueDocCount: uniqueDocIds.size,
     jurisdictions,
+    avgSimilarity,
   };
 }
 
 /**
  * Build the system prompt with retrieved context for the LLM.
  *
- * @spec CHAT-RAG-003
+ * @spec CHAT-RAG-004
  */
 export function buildPrompt(
   userQuery: string,
@@ -129,7 +151,10 @@ ${chunk.chunk_text}`;
     })
     .join("\n\n---\n\n");
 
-  const system = `You are CivicLens, a civic transparency assistant for Bel Air, Maryland (ZIP 21015). You help residents understand the laws, ordinances, and regulations that affect them across three levels of government: Maryland State, Harford County, and the Town of Bel Air.
+  const loc = getLocality();
+  const jurisdictionDesc = buildLocalityDescription();
+
+  const system = `You are CivicLens, a civic transparency assistant for ${loc.locality.name} (ZIP ${loc.zip}). You help residents understand the laws, ordinances, and regulations that affect them across ${jurisdictionDesc}.
 
 RULES:
 1. Answer based ONLY on the provided source documents. If the sources don't contain the answer, say so clearly.

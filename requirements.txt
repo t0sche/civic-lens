@@ -3,6 +3,7 @@
 
 # ─── HTTP / Scraping ────────────────────────────────────────────────
 requests>=2.31.0
+cloudscraper>=1.2.71       # Cloudflare challenge bypass for eCode360
 beautifulsoup4>=4.12.0
 lxml>=5.1.0               # Fast HTML/XML parser for BS4
 feedparser>=6.0.0          # RSS feed parsing
@@ -17,7 +18,7 @@ psycopg2-binary>=2.9.9    # Postgres driver (for direct pgvector queries if need
 
 # ─── Embeddings ──────────────────────────────────────────────────────
 # sentence-transformers>=3.0.0  # For local MiniLM — uncomment if not using Gemini
-google-generativeai>=0.7.0     # Gemini embedding API
+google-genai>=1.0.0            # Gemini embedding API (new SDK)
 
 # ─── Data Processing ────────────────────────────────────────────────
 pydantic>=2.7.0            # Data validation and schema enforcement

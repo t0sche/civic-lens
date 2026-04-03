@@ -137,33 +137,73 @@ The data exists but is fragmented across incompatible systems: two CivicPlus sit
 
 ### 4.3 Data Source → Collection Strategy Mapping
 
-Based on the data audit, each source maps to a specific collection tier:
+Based on the data audit, each source maps to a specific collection tier. Sources are phased by implementation priority (Phase 9 = next, Phase 10–11 = deferred).
 
-**Tier 1 — API-driven (operational in days)**
+**Federal APIs — Free structured federal data (Phase 9–10)**
+| Source | Endpoint | Auth | Phase | Notes |
+|--------|----------|------|-------|-------|
+| Congress.gov API | `api.congress.gov` | Free api.data.gov key | 9 | Replaces defunct ProPublica Congress API (shut down Feb 4, 2025). MD-01 covers Harford County. |
+| GovInfo API | `api.govinfo.gov` | Free api.data.gov key | 9 | Full text of bills, Federal Register, CFR, Congressional Record. |
+| USA Spending API | `api.usaspending.gov` | None | 9 | Federal contracts/grants. Filter by Harford County FIPS 24025. Aberdeen Proving Ground (APG) makes this unusually relevant — large DoD contracts. |
+| Census / ACS API | `api.census.gov` | Free key | 10 | Population, income, home value, poverty for FIPS 24025. |
+| FEMA NFHL | ArcGIS REST | None | 10 | National Flood Hazard Layer by county. Flood zones, base flood elevations. |
+| EPA ECHO | `echo.epa.gov/tools/web-services/` | None | 10 | Facility enforcement and compliance data by county/ZIP. Updated weekly. |
+| BLS LAUS | `api.bls.gov/publicAPI/v2/` | Free key | 10 | Harford County unemployment series `LAUCN240250000000003`. |
+| HUD Fair Market Rents | `huduser.gov/hudapi/public/fmr/` | Free token | 10 | FMR for ZIP 21015. 2025 two-bedroom: $1,965/month. |
+| OpenFEC | `api.open.fec.gov` | Free api.data.gov key | 10 | Campaign finance for MD-01, MD Senate races. |
+
+**State APIs — Tier 1 structured (Phase 9)**
 | Source | API | Data Available | Update Cadence |
 |--------|-----|----------------|----------------|
 | Open States | REST v3 (JSON) | MD bills, votes, sponsors, committees | Multiple times/day |
 | LegiScan | REST (JSON/CSV) | MD bills, full text, status, votes | Daily + weekly bulk |
-| Harford Co. ArcGIS Hub | ArcGIS REST | Zoning, parcels, land use, boundaries | As updated |
-| YouTube (Bel Air meetings) | YouTube Data API | Meeting video metadata, auto-captions | Per upload |
-| MD Open Data Portal | SODA REST | Contextual datasets (demographics, etc.) | Varies |
+| MGA Bulk CSV/JSON | `mgaleg.maryland.gov/mgawebsite/Legislation/OpenData` | All bill metadata since 2013, 79 subject categories | Throughout session |
+| MD Open Data Portal | SODA REST | 1,000+ contextual datasets | Varies |
 
-**Tier 2 — Structured scraping (1-2 weeks to build)**
+**Local GIS — ArcGIS REST (Phase 9)**
+| Source | Hub | Data Available | Notes |
+|--------|-----|----------------|-------|
+| Harford County ArcGIS Hub | `harford-county-gis-hub-harfordgis.hub.arcgis.com` | Parcels, zoning, land use, floodplains, wetlands, road centerlines | Not federated into MD Open Data Portal |
+| Bel Air ArcGIS Hub | `toba-data-hub-belairmd.hub.arcgis.com` | Zoning, property boundaries, parks, infrastructure | Newly discovered; REST API access |
+
+**Tier 2 — Structured scraping (Phase 9)**
 | Source | Method | Data Available | Fragility |
 |--------|--------|----------------|-----------|
 | Bel Air legislation page | HTML parse (BS4) | Ordinances/resolutions 2018+ with status | Low — simple HTML table |
+| CivicPlus RSS feeds (11 boards) | RSS polling | 11 Bel Air board/commission feeds + Alert Center, Calendar, News Flash, Jobs; Harford County RSS | Low — standard RSS |
 | CivicPlus AgendaCenter (both) | RSS + HTML parse | Agendas for 60+ county boards, 12 town boards | Low-Medium — stable CMS |
-| eCode360 (county + town codes) | HTML scrape or paid API ($845/yr) | Full codified law, hierarchical | Low — well-structured HTML |
-| Harford Co. custom bills app | HTTP requests + HTML parse | County council bills/resolutions | Medium — custom app, may change |
-| CivicPlus RSS feeds | RSS polling | Change detection for new content | Low — standard RSS |
+| eCode360 (county + town codes) | HTML scrape or PDF (`.extra/`) | Full codified law, hierarchical | Low — well-structured HTML. PDF available in `.extra/` for initial load without live scraping. |
+| Harford Co. custom bills app | HTTP requests + HTML parse | County council bills/resolutions | Medium — custom ASP.NET app |
+| Harford Co. ZBA | HTTP + HTML parse (extends harford_bills.py) | ZBA cases, variances, hearings, decisions | Low — same ASP.NET codebase |
+
+**Tier 2 — Structured scraping (Phase 10+)**
+| Source | Method | Data Available | Fragility |
+|--------|--------|----------------|-----------|
+| Bel Air DocumentCenter | Sequential numeric ID crawl | Budgets FY2012–2026, audits, capital plans, minutes archives | Low — sequential IDs |
+| MD Judiciary RSS | RSS polling | Appellate opinions, judicial news | Low — standard RSS |
+| Swagit/Granicus video archives | HTML parse | County meeting recordings back to 2011 with linked agendas | Medium — HTML structure |
+| Harford Development Review Dashboard | ArcGIS Feature Service | Active concept plans, site plans, community input | Medium — ArcGIS feature service |
 
 **Tier 3 — PDF extraction (ongoing effort)**
 | Source | Method | Data Available | Fragility |
 |--------|--------|----------------|-----------|
 | Council/Commissioner meeting minutes | pdfplumber + LLM extraction | Decisions, votes, discussion summaries | Medium — PDF quality varies |
 | Fiscal notes, staff reports | pdfplumber | Budget impacts, analysis | Medium |
+| MGA Bill text | pdfplumber (predictable PDF URL pattern) | Full bill text for MD General Assembly | Low — stable URL pattern |
 | Harford Co. Laserfiche docs | Headless browser + PDF extraction | Historical council documents | High — session-based navigation |
 | COMAR regulations | Headless browser (SharePoint) | State regulations (legal constraints on reuse) | High — JS-heavy, legal risk |
+
+**Deprecated Sources**
+| Source | Status | Replacement |
+|--------|--------|-------------|
+| ProPublica Congress API | **DEFUNCT** (GitHub archived Feb 4, 2025) | Congress.gov API (ingestion-federal arrow) |
+| Google Civic Information — Representatives | **DEFUNCT** (April 30, 2025) | Cicero API (commercial) or OCD-ID lookups |
+| Regulations.gov POST API | **Restricted** (Aug 2025) | GET endpoints still functional |
+
+**Strategic Gaps**
+- **Maryland campaign finance (MD CRIS)** — 17 years of contribution data behind HTML-only search at `campaignfinance.maryland.gov`. No API, no bulk download.
+- **Harford County non-federation** — Harford County is NOT federated into `opendata.maryland.gov`. County-level structured data limited to GIS layers.
+- **Public safety data** — Harford County Sheriff's Office does not publish structured crime statistics.
 
 ---
 
