@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 from src.lib.config import get_config
@@ -151,20 +152,50 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
 
 
 def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
-    """Generate embeddings using Google's Gemini embedding API."""
+    """Generate embeddings using Google's Gemini embedding API.
+
+    Batches texts and retries on 429 rate-limit errors with exponential backoff.
+    """
     import google.generativeai as genai
 
     genai.configure(api_key=api_key)
 
-    # Gemini embedding model
+    # Process in batches to reduce API calls (free tier: 100 req/min)
+    BATCH_SIZE = 50
+    MAX_RETRIES = 5
     embeddings = []
-    for text in texts:
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text,
-            task_type="retrieval_document",
-        )
-        embeddings.append(result["embedding"])
+
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch = texts[i : i + BATCH_SIZE]
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                result = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=batch,
+                    task_type="retrieval_document",
+                )
+                embeddings.extend(result["embedding"])
+                break
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 2 ** attempt * 10  # 10s, 20s, 40s, 80s, 160s
+                    logger.warning(
+                        f"Rate limited on batch {i // BATCH_SIZE + 1}, "
+                        f"retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})"
+                    )
+                    time.sleep(wait)
+                else:
+                    raise
+        else:
+            raise RuntimeError(
+                f"Gemini embedding failed after {MAX_RETRIES} retries for batch "
+                f"starting at index {i}"
+            )
+
+        # Brief pause between batches to avoid hitting rate limits
+        if i + BATCH_SIZE < len(texts):
+            time.sleep(1)
 
     return embeddings
 
