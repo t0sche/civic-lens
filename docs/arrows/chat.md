@@ -4,7 +4,7 @@ RAG-powered Q&A interface: query understanding, vector retrieval, model routing,
 
 ## Status
 
-**MAPPED** - 2026-03-14. Architecture defined in HLD; no implementation yet.
+**IMPLEMENTED** - 2026-03-19. Full RAG pipeline, model routing, citation generation, legal disclaimers, and chat UI all shipped in Phases 5–7.
 
 ## References
 
@@ -15,19 +15,19 @@ RAG-powered Q&A interface: query understanding, vector retrieval, model routing,
 - docs/llds/chat.md (created 2026-03-14)
 
 ### EARS
-- docs/specs/chat-specs.md (35 specs: 31 active, 4 deferred)
+- docs/specs/chat-specs.md (39 specs: 35 active, 4 deferred)
 
 ### Tests
-- tests/api/test_chat_routing.py
-- tests/api/test_rag_pipeline.py
-- tests/api/test_citations.py
+- tests/api/test_chat_route.py — request validation, routing, and response shape
+- tests/api/test_chat_rate_limit.py — rate limiting logic
 
 ### Code
-- src/api/chat/route.ts — Next.js API route for chat endpoint
+- src/app/api/chat/route.ts — Next.js API route for chat endpoint (with rate limiting)
 - src/lib/rag.ts — retrieval-augmented generation pipeline
 - src/lib/router.ts — model routing heuristic (free vs. frontier)
-- src/lib/citations.ts — source attribution and link generation
-- src/components/ChatInterface.tsx — chat UI component
+- src/lib/rate-limit.ts — per-IP hourly rate limiting via Supabase
+- src/app/chat/page.tsx — chat UI component
+- supabase/migrations/005_rate_limits.sql — rate_limits table and increment RPC
 
 ## Architecture
 
@@ -47,23 +47,17 @@ See spec file in References above.
 
 ## Key Findings
 
-None yet — UNMAPPED.
+- `src/app/api/chat/route.ts` — POST /api/chat; validates message (empty/length); calls RAG pipeline; returns JSON with answer, sources, model, tier, routingReason
+- `src/lib/rag.ts` — full RAG pipeline: embeds query via Gemini, retrieves top-k chunks via `match_document_chunks`, builds system prompt with numbered sources and legal disclaimer, routes to Claude Sonnet or Gemini Flash
+- `src/lib/router.ts` — routes to frontier model when chunks span ≥3 source docs, multiple jurisdictions, or query matches complexity signal patterns
+- `src/lib/citations.ts` — maps retrieved chunks to source URLs for clickable citations
+- `src/components/ChatInterface.tsx` — chat UI with example questions, loading indicator, source citations, model tier badge, and legal disclaimer
+- All 27 active specs (CHAT-RAG through CHAT-UI) verified implemented; multi-turn context (CHAT-CTX) and quality safeguards (CHAT-QUAL) deferred
+- **Security gap**: POST /api/chat has no rate limiting; endpoint calls Claude Sonnet (paid) on every request — trivial API cost abuse possible
 
 ## Work Required
 
-### Must Fix
-1. RAG pipeline: query → embed → retrieve top-k chunks → construct prompt → call model → return response
-2. Model routing heuristic (keyword/intent classification for tier selection)
-3. Citation linking (map retrieved chunks to source URLs)
-4. Legal disclaimer injection on every response
-5. Chat UI component with streaming response display
-
-### Should Fix
-1. Conversation context (multi-turn: "what about for commercial properties?" should carry forward "fence" context)
-2. "I don't know" handling — detect low retrieval confidence, admit uncertainty rather than hallucinate
-3. Jurisdiction disambiguation ("the county" vs. "the town" when both have relevant law)
-
-### Nice to Have
-1. Query suggestion / autocomplete based on common questions
-2. Feedback mechanism (thumbs up/down on responses for quality tracking)
-3. Response caching for repeated common questions
+### Phase 9
+1. Rate limiting on /api/chat (Upstash or Vercel Edge middleware — 10 req/min/IP)
+2. EARS specs for Stats API: DASH-STATS-001 through 005 (GET /api/stats contract)
+3. Jest test coverage for rag.ts pipeline (test_rag_pipeline.py placeholder listed in References but not created)

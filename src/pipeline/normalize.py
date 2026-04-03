@@ -76,6 +76,28 @@ HARFORD_STATUS_MAP: dict[str, LegislativeStatus] = {
     "Unknown": LegislativeStatus.UNKNOWN,
 }
 
+# Maps LegiScan numeric status codes to the unified LegislativeStatus enum.
+# Reference: https://legiscan.com/legiscan (Status Codes section)
+LEGISCAN_STATUS_MAP: dict[int, LegislativeStatus] = {
+    1: LegislativeStatus.INTRODUCED,           # Introduced
+    2: LegislativeStatus.PASSED_ONE_CHAMBER,   # Engrossed (passed originating chamber)
+    3: LegislativeStatus.ENACTED,              # Enrolled (passed both chambers)
+    4: LegislativeStatus.ENACTED,              # Passed (signed into law)
+    5: LegislativeStatus.VETOED,               # Vetoed
+    6: LegislativeStatus.REJECTED,             # Failed/Dead
+    10: LegislativeStatus.ENACTED,             # Chaptered (officially codified)
+}
+
+# Maps LegiScan numeric bill type IDs to the unified LegislativeType enum.
+LEGISCAN_TYPE_MAP: dict[int, LegislativeType] = {
+    1: LegislativeType.BILL,           # Bill
+    2: LegislativeType.RESOLUTION,     # Resolution
+    3: LegislativeType.RESOLUTION,     # Concurrent Resolution
+    4: LegislativeType.RESOLUTION,     # Joint Resolution
+    5: LegislativeType.RESOLUTION,     # Joint Resolution (Enrolled)
+    6: LegislativeType.EXECUTIVE_ORDER,  # Executive Order
+}
+
 
 # ─── Source Normalizers ──────────────────────────────────────────────────
 
@@ -215,6 +237,53 @@ def normalize_harford_bills(bronze_id: str, raw: dict) -> LegislativeItem:
     )
 
 
+def normalize_legiscan_bill(bronze_id: str, raw: dict) -> LegislativeItem:
+    """
+    Normalize a LegiScan bill record to a LegislativeItem.
+
+    @spec DATA-PIPE-001
+    """
+    bill = json.loads(raw) if isinstance(raw, str) else raw
+
+    # Map numeric status code to unified status
+    status_id = bill.get("status", 0)
+    status = LEGISCAN_STATUS_MAP.get(status_id, LegislativeStatus.UNKNOWN)
+
+    # Map numeric bill type to unified type
+    type_id = bill.get("bill_type_id", 1)
+    item_type = LEGISCAN_TYPE_MAP.get(type_id, LegislativeType.BILL)
+
+    # Extract sponsor names from sponsors list
+    sponsors = [
+        s.get("name", "") for s in bill.get("sponsors", []) if s.get("name")
+    ]
+
+    # Extract subject names as tags
+    tags = [
+        s.get("subject_name", "") for s in bill.get("subjects", []) if s.get("subject_name")
+    ]
+
+    # Prefer state_link (official legislature URL) over LegiScan URL
+    source_url = bill.get("state_link") or bill.get("url")
+
+    return LegislativeItem(
+        bronze_id=bronze_id,
+        source_id=bill.get("bill_number", ""),
+        jurisdiction=JurisdictionLevel.STATE,
+        body=get_state_config()["body"],
+        item_type=item_type,
+        title=bill.get("title", "Untitled"),
+        summary=bill.get("description") or None,
+        status=status,
+        introduced_date=_parse_date(bill.get("intro_date")),
+        last_action_date=_parse_date(bill.get("last_action_date")),
+        last_action=bill.get("last_action") or None,
+        sponsors=sponsors,
+        source_url=source_url,
+        tags=tags,
+    )
+
+
 def normalize_ecode360_section(bronze_id: str, raw: str, metadata: dict) -> CodeSection:
     """
     Normalize an eCode360 section to a CodeSection.
@@ -265,7 +334,7 @@ NORMALIZERS: dict[str, Callable] = {
     "openstates": normalize_openstates_bill,
     "belair_legislation": normalize_belair_legislation,
     "harford_bills": normalize_harford_bills,
-    # "legiscan": normalize_legiscan_bill,  # TODO (Phase 9)
+    "legiscan": normalize_legiscan_bill,
     # "ecode360_belair": normalize_ecode360_section,  # Uses different signature
     # "ecode360_harford": normalize_ecode360_section,
 }
