@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date
 from typing import Any, Callable
 
@@ -24,9 +25,14 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
+import httpx
+
 from src.lib.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1.0  # seconds
 
 
 # ─── Status Mapping ─────────────────────────────────────────────────────
@@ -241,14 +247,33 @@ def run_normalization(source: str | None = None) -> None:
             logger.warning(f"No normalizer for source: {row_source}")
 
 
+def _execute_with_retry(query) -> None:
+    """Execute a Supabase query with retry on transient HTTP errors."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            query.execute()
+            return
+        except httpx.RemoteProtocolError:
+            if attempt == MAX_RETRIES - 1:
+                raise
+            wait = RETRY_BACKOFF_BASE * (2 ** attempt)
+            logger.warning(
+                f"Transient HTTP error, retrying in {wait}s "
+                f"(attempt {attempt + 1}/{MAX_RETRIES})"
+            )
+            time.sleep(wait)
+
+
 def _upsert_legislative_item(db, item: LegislativeItem) -> None:
     """Write a LegislativeItem to the Silver layer."""
     row = item.model_dump(mode="json")
     row.pop("id", None)  # Let Postgres generate the ID on insert
-    db.table("legislative_items").upsert(
-        row,
-        on_conflict="source_id,jurisdiction,body",
-    ).execute()
+    _execute_with_retry(
+        db.table("legislative_items").upsert(
+            row,
+            on_conflict="source_id,jurisdiction,body",
+        )
+    )
 
 
 def _upsert_code_section(db, section: CodeSection) -> None:
@@ -256,10 +281,12 @@ def _upsert_code_section(db, section: CodeSection) -> None:
     row = section.model_dump(mode="json")
     row.pop("id", None)
     row.pop("parent_section_id", None)  # Handle hierarchy separately
-    db.table("code_sections").upsert(
-        row,
-        on_conflict="code_source,chapter,section",
-    ).execute()
+    _execute_with_retry(
+        db.table("code_sections").upsert(
+            row,
+            on_conflict="code_source,chapter,section",
+        )
+    )
 
 
 def _parse_date(date_str: str | None) -> date | None:
