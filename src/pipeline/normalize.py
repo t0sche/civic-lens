@@ -33,7 +33,12 @@ from src.lib.models import (
 )
 import httpx
 
-from src.lib.supabase import get_supabase_client
+from src.lib.supabase import (
+    get_supabase_client,
+    start_ingestion_run,
+    complete_ingestion_run,
+)
+from src.pipeline.validate import validate_code_section, validate_legislative_item
 
 logger = logging.getLogger(__name__)
 
@@ -402,28 +407,7 @@ def run_normalization(source: str | None = None) -> None:
 
     logger.info(f"Normalizing {len(all_rows)} Bronze records")
 
-    for row in all_rows:
-        row_source = row["source"]
-
-        if row_source in ("ecode360_belair", "ecode360_harford"):
-            # Code sections use a different normalization path
-            section = normalize_ecode360_section(
-                bronze_id=row["id"],
-                raw=row["raw_content"],
-                metadata=row.get("raw_metadata", {}),
-            )
-            if validate_code_section(section):
-                _upsert_code_section(db, section)
-
-        elif row_source in NORMALIZERS:
-            normalizer = NORMALIZERS[row_source]
-            kwargs: dict = {"bronze_id": row["id"], "raw": row["raw_content"]}
-            # Pass raw_metadata to normalizers that accept it (e.g., belair)
-            if row_source == "belair_legislation":
-                kwargs["metadata"] = row.get("raw_metadata", {})
-            item = normalizer(**kwargs)
-            if validate_legislative_item(item):
-                _upsert_legislative_item(db, item)
+    run_id = start_ingestion_run(db, "normalize")
 
     try:
         normalized = 0
@@ -442,7 +426,10 @@ def run_normalization(source: str | None = None) -> None:
 
             elif row_source in NORMALIZERS:
                 normalizer = NORMALIZERS[row_source]
-                item = normalizer(bronze_id=row["id"], raw=row["raw_content"])
+                kwargs: dict = {"bronze_id": row["id"], "raw": row["raw_content"]}
+                if row_source == "belair_legislation":
+                    kwargs["metadata"] = row.get("raw_metadata", {})
+                item = normalizer(**kwargs)
                 if validate_legislative_item(item):
                     _upsert_legislative_item(db, item)
                     normalized += 1
@@ -461,6 +448,21 @@ def run_normalization(source: str | None = None) -> None:
         logger.error(f"Normalization failed: {e}")
         complete_ingestion_run(db, run_id, error_message=str(e))
         raise
+
+
+def fetch_all_rows(query) -> list[dict]:
+    """Fetch all rows from a Supabase query, paginating past the default 1000-row limit."""
+    page_size = 1000
+    offset = 0
+    all_rows: list[dict] = []
+    while True:
+        result = query.range(offset, offset + page_size - 1).execute()
+        rows = result.data or []
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_rows
 
 
 def _execute_with_retry(query) -> None:
