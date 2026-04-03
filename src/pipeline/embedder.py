@@ -215,11 +215,11 @@ EMBEDDING_DIM = 768
 
 
 def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
-    """Generate embeddings using Google's Gemini embedding API.
+    """Generate embeddings using Google Gemini gemini-embedding-001 (768-dim).
 
     Batches texts and retries on 429 rate-limit errors with exponential backoff.
     """
-    import google.generativeai as genai
+    from google import genai
 
     client = genai.Client(api_key=api_key)
 
@@ -233,12 +233,18 @@ def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
 
         for attempt in range(MAX_RETRIES):
             try:
-                result = genai.embed_content(
-                    model="models/text-embedding-004",
-                    content=batch,
-                    task_type="retrieval_document",
-                )
-                embeddings.extend(result["embedding"])
+                for text in batch:
+                    result = client.models.embed_content(
+                        model="gemini-embedding-001",
+                        contents=text,
+                        config={"task_type": "RETRIEVAL_DOCUMENT", "output_dimensionality": 768},
+                    )
+                    values = result.embeddings[0].values
+                    if len(values) != EMBEDDING_DIM:
+                        raise RuntimeError(
+                            f"Expected {EMBEDDING_DIM}-dim embedding, got {len(values)}-dim."
+                        )
+                    embeddings.append(values)
                 break
             except Exception as e:
                 if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
