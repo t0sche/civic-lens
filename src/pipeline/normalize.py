@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date
 from typing import Callable
 
@@ -30,15 +31,14 @@ from src.lib.models import (
     LegislativeStatus,
     LegislativeType,
 )
-from src.lib.supabase import (
-    complete_ingestion_run,
-    fetch_all_rows,
-    get_supabase_client,
-    start_ingestion_run,
-)
-from src.pipeline.validate import validate_code_section, validate_legislative_item
+import httpx
+
+from src.lib.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1.0  # seconds
 
 
 # ─── Status Mapping ─────────────────────────────────────────────────────
@@ -463,6 +463,23 @@ def run_normalization(source: str | None = None) -> None:
         raise
 
 
+def _execute_with_retry(query) -> None:
+    """Execute a Supabase query with retry on transient HTTP errors."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            query.execute()
+            return
+        except httpx.RemoteProtocolError:
+            if attempt == MAX_RETRIES - 1:
+                raise
+            wait = RETRY_BACKOFF_BASE * (2 ** attempt)
+            logger.warning(
+                f"Transient HTTP error, retrying in {wait}s "
+                f"(attempt {attempt + 1}/{MAX_RETRIES})"
+            )
+            time.sleep(wait)
+
+
 def _upsert_legislative_item(db, item: LegislativeItem) -> None:
     """Write a LegislativeItem to the Silver layer.
 
@@ -472,41 +489,12 @@ def _upsert_legislative_item(db, item: LegislativeItem) -> None:
     """
     row = item.model_dump(mode="json")
     row.pop("id", None)  # Let Postgres generate the ID on insert
-
-    # Check for an existing record to merge with
-    existing = (
-        db.table("legislative_items")
-        .select("*")
-        .eq("source_id", item.source_id)
-        .eq("jurisdiction", item.jurisdiction.value)
-        .eq("body", item.body)
-        .limit(1)
-        .execute()
+    _execute_with_retry(
+        db.table("legislative_items").upsert(
+            row,
+            on_conflict="source_id,jurisdiction,body",
+        )
     )
-
-    if existing.data:
-        old = existing.data[0]
-        # Keep existing non-null values when incoming value is empty/null
-        mergeable = [
-            "summary", "source_url", "last_action", "last_action_date",
-            "introduced_date",
-        ]
-        for field in mergeable:
-            if not row.get(field) and old.get(field):
-                row[field] = old[field]
-        # Merge sponsors and tags (union of both lists)
-        for list_field in ("sponsors", "tags"):
-            old_vals = old.get(list_field) or []
-            new_vals = row.get(list_field) or []
-            row[list_field] = list(dict.fromkeys(old_vals + new_vals))
-        # Keep the more advanced status (higher signal > UNKNOWN)
-        if row.get("status") == "UNKNOWN" and old.get("status") != "UNKNOWN":
-            row["status"] = old["status"]
-
-    db.table("legislative_items").upsert(
-        row,
-        on_conflict="source_id,jurisdiction,body",
-    ).execute()
 
 
 def _upsert_code_section(db, section: CodeSection) -> None:
@@ -514,10 +502,12 @@ def _upsert_code_section(db, section: CodeSection) -> None:
     row = section.model_dump(mode="json")
     row.pop("id", None)
     row.pop("parent_section_id", None)  # Handle hierarchy separately
-    db.table("code_sections").upsert(
-        row,
-        on_conflict="code_source,chapter,section",
-    ).execute()
+    _execute_with_retry(
+        db.table("code_sections").upsert(
+            row,
+            on_conflict="code_source,chapter,section",
+        )
+    )
 
 
 def _parse_date(date_str: str | None) -> date | None:
