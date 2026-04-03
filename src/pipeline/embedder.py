@@ -102,27 +102,80 @@ def chunk_legislative_item(
     summary: str | None,
     jurisdiction: str,
     body: str,
+    full_text: str | None = None,
 ) -> list[DocumentChunk]:
     """
     Chunk a legislative item (bill, ordinance, resolution).
 
-    For MVP, legislative items are typically short enough for a single chunk
-    (title + summary). Full bill text chunking is a Phase 4+ concern.
+    When full_text is provided (e.g., from PDF extraction), creates multiple
+    chunks using paragraph-boundary splitting with overlap (same strategy as
+    code sections). Otherwise falls back to a single title+summary chunk.
 
     @spec EMBED-CHUNK-001, EMBED-CHUNK-002
     """
+    section_path = f"{body} > {title}"
+
+    # If we have full document text, chunk it properly
+    if full_text and len(full_text) > MAX_CHUNK_CHARS:
+        # First chunk is title + summary for searchability
+        chunks = [DocumentChunk(
+            source_type=ChunkSourceType.LEGISLATIVE_ITEM,
+            source_id=item_id,
+            jurisdiction=JurisdictionLevel(jurisdiction),
+            chunk_text=f"{title}\n\n{summary}" if summary else title,
+            chunk_index=0,
+            section_path=section_path,
+            metadata={"has_summary": summary is not None, "chunk_role": "header"},
+        )]
+
+        # Remaining chunks from full text, split at paragraph boundaries
+        paragraphs = full_text.split("\n\n")
+        current_chunk = ""
+        chunk_index = 1
+
+        for para in paragraphs:
+            if len(current_chunk) + len(para) > MAX_CHUNK_CHARS and current_chunk:
+                chunks.append(DocumentChunk(
+                    source_type=ChunkSourceType.LEGISLATIVE_ITEM,
+                    source_id=item_id,
+                    jurisdiction=JurisdictionLevel(jurisdiction),
+                    chunk_text=current_chunk.strip(),
+                    chunk_index=chunk_index,
+                    section_path=section_path,
+                    metadata={"chunk_role": "body"},
+                ))
+                chunk_index += 1
+                current_chunk = current_chunk[-SUB_CHUNK_OVERLAP:] + "\n\n" + para
+            else:
+                current_chunk += "\n\n" + para if current_chunk else para
+
+        if current_chunk.strip():
+            chunks.append(DocumentChunk(
+                source_type=ChunkSourceType.LEGISLATIVE_ITEM,
+                source_id=item_id,
+                jurisdiction=JurisdictionLevel(jurisdiction),
+                chunk_text=current_chunk.strip(),
+                chunk_index=chunk_index,
+                section_path=section_path,
+                metadata={"chunk_role": "body"},
+            ))
+
+        return chunks
+
+    # Short items: single chunk with title + summary (+ full_text if short enough)
     text_parts = [title]
     if summary:
         text_parts.append(summary)
+    if full_text and full_text not in (summary or ""):
+        text_parts.append(full_text)
 
     chunk_text = "\n\n".join(text_parts)
-    section_path = f"{body} > {title}"
 
     return [DocumentChunk(
         source_type=ChunkSourceType.LEGISLATIVE_ITEM,
         source_id=item_id,
         jurisdiction=JurisdictionLevel(jurisdiction),
-        chunk_text=chunk_text,
+        chunk_text=chunk_text[:MAX_CHUNK_CHARS],
         chunk_index=0,
         section_path=section_path,
         metadata={"has_summary": summary is not None},
@@ -187,7 +240,20 @@ def _legitem_source_text(item: dict) -> str:
     parts = [item["title"]]
     if item.get("summary"):
         parts.append(item["summary"])
+    # Include bronze full text in hash so re-ingested PDFs trigger re-embedding
+    bronze = item.get("bronze_documents") or {}
+    if bronze.get("raw_metadata", {}).get("pdf_extracted") and bronze.get("raw_content"):
+        parts.append(bronze["raw_content"][:500])
     return "\n\n".join(parts)
+
+
+def _get_bronze_full_text(item: dict) -> str | None:
+    """Extract full document text from bronze layer if PDF was extracted."""
+    bronze = item.get("bronze_documents") or {}
+    meta = bronze.get("raw_metadata") or {}
+    if meta.get("pdf_extracted") and bronze.get("raw_content"):
+        return bronze["raw_content"]
+    return None
 
 
 # ─── Pipeline Runner ────────────────────────────────────────────────────
@@ -307,7 +373,9 @@ def _embed_legislative_items(db) -> None:
     """Chunk and embed legislative items, re-embedding if content has changed."""
     embedded_hashes = _get_embedded_source_hashes(db, ChunkSourceType.LEGISLATIVE_ITEM.value)
 
-    all_items = fetch_all_rows(db.table("legislative_items").select("*"))
+    all_items = fetch_all_rows(
+        db.table("legislative_items").select("*, bronze_documents(raw_content, raw_metadata)")
+    )
 
     if not all_items:
         logger.info("No legislative items to embed")
@@ -351,6 +419,7 @@ def _embed_legislative_items(db) -> None:
             summary=item.get("summary"),
             jurisdiction=item["jurisdiction"],
             body=item["body"],
+            full_text=_get_bronze_full_text(item),
         )
 
         texts = [c.chunk_text for c in chunks]

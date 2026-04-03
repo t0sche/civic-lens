@@ -14,10 +14,13 @@ links to PDF documents in the CivicPlus DocumentCenter.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
+import time
 from dataclasses import asdict, dataclass
 
+import pdfplumber
 import requests
 from bs4 import BeautifulSoup
 
@@ -126,9 +129,54 @@ def scrape_legislation_page() -> list[LegislationEntry]:
     return entries
 
 
+def fetch_pdf_text(url: str, session: requests.Session) -> str | None:
+    """
+    Download a PDF from a URL and extract its text content using pdfplumber.
+
+    Returns the extracted text, or None if the download or extraction fails.
+    """
+    try:
+        logger.info(f"Downloading PDF: {url}")
+        resp = session.get(url, timeout=30)
+        resp.raise_for_status()
+
+        content_type = resp.headers.get("content-type", "")
+        if "pdf" not in content_type and not url.endswith(".pdf"):
+            logger.debug(f"Skipping non-PDF response: {content_type}")
+            return None
+
+        with pdfplumber.open(io.BytesIO(resp.content)) as pdf:
+            pages = []
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    pages.append(text)
+
+            if not pages:
+                logger.warning(f"No text extracted from PDF: {url}")
+                return None
+
+            full_text = "\n\n".join(pages)
+            logger.info(
+                f"Extracted {len(full_text)} chars from {len(pages)} pages: {url}"
+            )
+            return full_text
+
+    except requests.RequestException as e:
+        logger.warning(f"Failed to download PDF {url}: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to extract text from PDF {url}: {e}")
+        return None
+
+
 def ingest_belair_legislation() -> None:
     """
     Main entry point: scrape municipal legislation and write to Bronze layer.
+
+    Downloads PDF documents when available and extracts their text content
+    for embedding. Falls back to metadata-only storage when PDFs are
+    unavailable or extraction fails.
 
     @spec INGEST-SCRAPE-010, INGEST-SCRAPE-011, INGEST-SCRAPE-012,
           INGEST-SCRAPE-013, INGEST-SCRAPE-014, INGEST-SCRAPE-015
@@ -139,6 +187,11 @@ def ingest_belair_legislation() -> None:
     db = get_supabase_client()
     run_id = start_ingestion_run(db, "belair_legislation")
 
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "CivicLens/0.1 (civic transparency project)"
+    })
+
     try:
         entries = scrape_legislation_page()
         fetched = 0
@@ -146,7 +199,32 @@ def ingest_belair_legislation() -> None:
         updated = 0
 
         for entry in entries:
-            raw_content = json.dumps(asdict(entry), default=str)
+            # Try to extract full text from PDF
+            pdf_text = None
+            if entry.pdf_url:
+                pdf_text = fetch_pdf_text(entry.pdf_url, session)
+                time.sleep(REQUEST_DELAY)
+
+            # Use PDF text as raw_content if available, fall back to metadata JSON
+            if pdf_text:
+                raw_content = pdf_text
+                raw_metadata = {
+                    "status": entry.status,
+                    "item_type": entry.item_type,
+                    "has_pdf": True,
+                    "pdf_extracted": True,
+                    "pdf_url": entry.pdf_url,
+                    "title": entry.title,
+                    "number": entry.number,
+                }
+            else:
+                raw_content = json.dumps(asdict(entry), default=str)
+                raw_metadata = {
+                    "status": entry.status,
+                    "item_type": entry.item_type,
+                    "has_pdf": entry.pdf_url is not None,
+                    "pdf_extracted": False,
+                }
 
             result = upsert_bronze_document(
                 db,
@@ -154,11 +232,7 @@ def ingest_belair_legislation() -> None:
                 source_id=entry.number,
                 document_type=entry.item_type,
                 raw_content=raw_content,
-                raw_metadata={
-                    "status": entry.status,
-                    "item_type": entry.item_type,
-                    "has_pdf": entry.pdf_url is not None,
-                },
+                raw_metadata=raw_metadata,
                 url=entry.pdf_url or LEGISLATION_URL,
             )
             fetched += 1
