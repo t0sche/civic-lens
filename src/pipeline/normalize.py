@@ -390,9 +390,45 @@ def run_normalization(source: str | None = None) -> None:
 
 
 def _upsert_legislative_item(db, item: LegislativeItem) -> None:
-    """Write a LegislativeItem to the Silver layer."""
+    """Write a LegislativeItem to the Silver layer.
+
+    When the same bill exists from multiple sources (e.g. Open States and
+    LegiScan), merge fields so that non-null incoming values update the
+    record but existing non-null values are not blanked out.
+    """
     row = item.model_dump(mode="json")
     row.pop("id", None)  # Let Postgres generate the ID on insert
+
+    # Check for an existing record to merge with
+    existing = (
+        db.table("legislative_items")
+        .select("*")
+        .eq("source_id", item.source_id)
+        .eq("jurisdiction", item.jurisdiction.value)
+        .eq("body", item.body)
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        old = existing.data[0]
+        # Keep existing non-null values when incoming value is empty/null
+        mergeable = [
+            "summary", "source_url", "last_action", "last_action_date",
+            "introduced_date",
+        ]
+        for field in mergeable:
+            if not row.get(field) and old.get(field):
+                row[field] = old[field]
+        # Merge sponsors and tags (union of both lists)
+        for list_field in ("sponsors", "tags"):
+            old_vals = old.get(list_field) or []
+            new_vals = row.get(list_field) or []
+            row[list_field] = list(dict.fromkeys(old_vals + new_vals))
+        # Keep the more advanced status (higher signal > UNKNOWN)
+        if row.get("status") == "UNKNOWN" and old.get("status") != "UNKNOWN":
+            row["status"] = old["status"]
+
     db.table("legislative_items").upsert(
         row,
         on_conflict="source_id,jurisdiction,body",
