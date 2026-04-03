@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+import time
+from typing import Any
 
 from src.lib.config import get_config
 from src.lib.models import ChunkSourceType, DocumentChunk, JurisdictionLevel
@@ -212,25 +215,50 @@ EMBEDDING_DIM = 768
 
 
 def _embed_gemini(texts: list[str], api_key: str) -> list[list[float]]:
-    """Generate embeddings using Google Gemini gemini-embedding-001 (768-dim)."""
-    from google import genai
+    """Generate embeddings using Google's Gemini embedding API.
+
+    Batches texts and retries on 429 rate-limit errors with exponential backoff.
+    """
+    import google.generativeai as genai
 
     client = genai.Client(api_key=api_key)
 
+    # Process in batches to reduce API calls (free tier: 100 req/min)
+    BATCH_SIZE = 50
+    MAX_RETRIES = 5
     embeddings = []
-    for text in texts:
-        result = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=text,
-            config={"task_type": "RETRIEVAL_DOCUMENT", "output_dimensionality": 768},
-        )
-        values = result.embeddings[0].values
-        if len(values) != EMBEDDING_DIM:
+
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch = texts[i : i + BATCH_SIZE]
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                result = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=batch,
+                    task_type="retrieval_document",
+                )
+                embeddings.extend(result["embedding"])
+                break
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 2 ** attempt * 10  # 10s, 20s, 40s, 80s, 160s
+                    logger.warning(
+                        f"Rate limited on batch {i // BATCH_SIZE + 1}, "
+                        f"retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})"
+                    )
+                    time.sleep(wait)
+                else:
+                    raise
+        else:
             raise RuntimeError(
-                f"Expected {EMBEDDING_DIM}-dim embedding, got {len(values)}-dim. "
-                f"Check the Gemini embedding model configuration."
+                f"Gemini embedding failed after {MAX_RETRIES} retries for batch "
+                f"starting at index {i}"
             )
-        embeddings.append(values)
+
+        # Brief pause between batches to avoid hitting rate limits
+        if i + BATCH_SIZE < len(texts):
+            time.sleep(1)
 
     return embeddings
 
