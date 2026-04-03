@@ -45,8 +45,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-import pdfplumber
-
+from src.ingestion.extractors.pdf_extractor import extract_text as extract_pdf
 from src.lib.supabase import (
     complete_ingestion_run,
     get_supabase_client,
@@ -88,13 +87,6 @@ DOC_TYPE_VOCAB = {
     "policy",
     "other",
 }
-
-# Page separator used in raw_content to join extracted page text
-PAGE_SEPARATOR = "\n\n---\n\n"
-
-# Minimum text length (characters) to consider a page successfully extracted
-MIN_PAGE_TEXT_LENGTH = 20
-
 
 # ─── Metadata resolution ──────────────────────────────────────────────────
 
@@ -248,72 +240,6 @@ def _resolve_metadata(pdf_path: Path, sidecar: dict[str, Any] | None) -> dict[st
     return meta
 
 
-# ─── PDF extraction ───────────────────────────────────────────────────────
-
-
-def extract_pdf_text(pdf_path: Path) -> tuple[str, int]:
-    """
-    Extract text from a PDF using pdfplumber.
-
-    Returns (extracted_text, page_count).
-
-    Pages are joined with PAGE_SEPARATOR. Pages with fewer than
-    MIN_PAGE_TEXT_LENGTH characters (likely scanned/image-only) are
-    replaced with a placeholder noting the page number.
-
-    Raises RuntimeError if the PDF cannot be opened or yields no text.
-
-    @spec INGEST-PDF-001
-    """
-    pages_text: list[str] = []
-    scanned_pages: list[int] = []
-
-    try:
-        with pdfplumber.open(str(pdf_path)) as pdf:
-            page_count = len(pdf.pages)
-            if page_count == 0:
-                raise RuntimeError(f"PDF has no pages: {pdf_path.name}")
-
-            for i, page in enumerate(pdf.pages, start=1):
-                try:
-                    text = page.extract_text() or ""
-                    text = text.strip()
-                except Exception as e:
-                    logger.warning(f"Page {i} extraction error in {pdf_path.name}: {e}")
-                    text = ""
-
-                if len(text) >= MIN_PAGE_TEXT_LENGTH:
-                    pages_text.append(text)
-                else:
-                    # Page likely scanned or image-only
-                    scanned_pages.append(i)
-                    pages_text.append(f"[Page {i}: image-only or insufficient text]")
-
-    except pdfplumber.exceptions.PDFSyntaxError as e:
-        raise RuntimeError(f"PDF syntax error in {pdf_path.name}: {e}") from e
-    except Exception as e:
-        raise RuntimeError(f"Failed to open PDF {pdf_path.name}: {e}") from e
-
-    full_text = PAGE_SEPARATOR.join(pages_text)
-
-    if not full_text.strip():
-        raise RuntimeError(
-            f"No text extracted from {pdf_path.name}. "
-            "The PDF may be fully scanned/image-based. "
-            "Run through OCR before ingesting."
-        )
-
-    if scanned_pages:
-        logger.warning(
-            f"{pdf_path.name}: {len(scanned_pages)}/{page_count} pages had "
-            f"insufficient text (possibly scanned): pages {scanned_pages[:10]}"
-            + ("..." if len(scanned_pages) > 10 else "")
-        )
-
-    logger.info(f"Extracted {len(full_text)} chars from {page_count} pages: {pdf_path.name}")
-    return full_text, page_count
-
-
 # ─── Ingestion logic ──────────────────────────────────────────────────────
 
 
@@ -370,23 +296,24 @@ def ingest_pdf(
     source_id = build_source_id(pdf_path, corpus_dir)
     result["source_id"] = source_id
 
-    # 4. Extract PDF text
+    # 4. Extract PDF text (with OCR fallback for scanned pages)
     try:
-        raw_content, page_count = extract_pdf_text(pdf_path)
+        extraction = extract_pdf(pdf_path)
     except RuntimeError as e:
         result["status"] = "error"
         result["error"] = str(e)
         logger.error(str(e))
         return result
 
-    # 5. Build raw_metadata
+    raw_content = extraction.text
     raw_metadata: dict[str, Any] = {
         "jurisdiction": meta["jurisdiction"],
         "doc_type": meta["doc_type"],
         "date": meta["date"],
         "source_url": meta["source_url"],
         "title": meta["title"],
-        "page_count": page_count,
+        "page_count": extraction.page_count,
+        "ocr_pages": extraction.ocr_page_count,
         "filename": pdf_path.name,
     }
     # Include optional fields if present
