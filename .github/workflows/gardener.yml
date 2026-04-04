@@ -13,12 +13,6 @@
 name: Gardener
 
 on:
-  schedule:
-    # Weekly: Monday at 12:00 UTC (7:00 AM ET)
-    - cron: '0 12 * * 1'
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       deploy_url:
